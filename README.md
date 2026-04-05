@@ -4,11 +4,18 @@ A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
 Each friend has their own personality (SOUL.md), persistent memory (MEMORY.md), timezone-aware schedule, and texting style. They decide independently whether to respond to messages, occasionally talk to each other, and remember things you've told them. It's like a real group chat except nobody flakes on plans because nobody makes plans because they aren't real.
 
-## Setup
+## Quick Start
+
+No clone needed. Just run:
 
 ```bash
-uv sync
-uv run python scripts/initialize.py
+uv run https://raw.githubusercontent.com/audiodude/friend-group/main/scripts/initialize.py
+```
+
+This clones the repo, then walks you through setup. Or if you already have the repo:
+
+```bash
+uv run scripts/initialize.py
 ```
 
 The setup wizard walks you through everything:

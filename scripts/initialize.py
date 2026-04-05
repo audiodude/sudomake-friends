@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Interactive friend group initialization with checkpoint/resume."""
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "anthropic>=0.40.0",
+#     "pyyaml>=6.0",
+# ]
+# ///
+"""Interactive friend group initialization.
+
+Run directly:  uv run https://raw.githubusercontent.com/audiodude/friend-group/main/scripts/initialize.py
+Or locally:    uv run scripts/initialize.py
+"""
 
 import curses
 import json
@@ -7,15 +18,47 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
+REPO_URL = "https://github.com/audiodude/friend-group.git"
+MODEL = "claude-4-sonnet-20250514"
+
+# ─── Project directory resolution ─────────────────────────────────────────────
+
+def resolve_project_dir() -> Path:
+    """Find or create the project directory."""
+    # If we're already inside a friend-group project (has src/main.py), use it
+    cwd = Path.cwd()
+    if (cwd / "src" / "main.py").exists() and (cwd / "friends").exists():
+        return cwd
+
+    # If there's a friend-group subdir, use that
+    if (cwd / "friend-group" / "src" / "main.py").exists():
+        return cwd / "friend-group"
+
+    # Otherwise, clone the repo
+    target = cwd / "friend-group"
+    if not target.exists():
+        print(f"\n  Cloning friend-group into {target}...")
+        result = subprocess.run(
+            ["git", "clone", REPO_URL, str(target)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"  Error cloning: {result.stderr}")
+            sys.exit(1)
+        print("  Done.")
+    return target
+
+
+ROOT = resolve_project_dir()
 FRIENDS_DIR = ROOT / "friends"
 CHECKPOINT_PATH = ROOT / ".init-checkpoint.json"
 ENV_PATH = ROOT / ".env"
-MODEL = "claude-4-sonnet-20250514"
+SCRAPE_CACHE_DIR = ROOT / ".scrape-cache"
 
 
 # ─── Checkpoint system ────────────────────────────────────────────────────────
@@ -170,7 +213,6 @@ it possible to distinguish this character's messages from any other character at
 
 # ─── Scraper ──────────────────────────────────────────────────────────────────
 
-SCRAPE_CACHE_DIR = ROOT / ".scrape-cache"
 SCRAPE_TIMEOUT = 180  # 3 minutes total
 
 
@@ -185,7 +227,6 @@ def _fetch_page(url: str, timeout: int = 10) -> str | None:
 
 
 def _extract_links(html: str, base_url: str) -> list[str]:
-    """Extract same-domain links from HTML."""
     import re
     from urllib.parse import urljoin, urlparse
     base_domain = urlparse(base_url).netloc
@@ -194,16 +235,14 @@ def _extract_links(html: str, base_url: str) -> list[str]:
         href = match.group(1)
         full = urljoin(base_url, href)
         parsed = urlparse(full)
-        # Same domain, no fragments, no media files
         if (parsed.netloc == base_domain
                 and not parsed.path.endswith(('.png', '.jpg', '.gif', '.css', '.js', '.svg', '.pdf', '.zip'))
                 and '#' not in full):
             links.append(full.split('#')[0])
-    return list(dict.fromkeys(links))  # dedupe preserving order
+    return list(dict.fromkeys(links))
 
 
 def _strip_html(html: str) -> str:
-    """Rough HTML to text."""
     import re
     text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
     text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
@@ -213,12 +252,9 @@ def _strip_html(html: str) -> str:
 
 
 def scrape_site(url: str) -> str:
-    """Crawl a site for up to 3 minutes, cache results."""
-    import time
+    import hashlib
     SCRAPE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Check cache
-    import hashlib
     cache_key = hashlib.md5(url.encode()).hexdigest()
     cache_file = SCRAPE_CACHE_DIR / f"{cache_key}.txt"
     if cache_file.exists():
@@ -242,11 +278,10 @@ def scrape_site(url: str) -> str:
             continue
 
         text = _strip_html(html)
-        if len(text) > 100:  # skip near-empty pages
+        if len(text) > 100:
             pages.append(f"--- Page: {current} ---\n{text[:3000]}")
             print(f"    [{len(pages)}] {current[:60]}...")
 
-        # Only follow links from same site
         if len(pages) < 15:
             for link in _extract_links(html, url):
                 if link not in visited:
@@ -255,11 +290,7 @@ def scrape_site(url: str) -> str:
     elapsed = time.time() - start
     print(f"  Scraped {len(pages)} pages in {elapsed:.0f}s")
 
-    result = "\n\n".join(pages)
-    # Truncate to a reasonable size for the LLM
-    result = result[:30000]
-
-    # Cache it
+    result = "\n\n".join(pages)[:30000]
     cache_file.write_text(result)
     return result
 
@@ -501,7 +532,6 @@ def step_select_friends(cp: dict) -> dict:
             selection_ui, candidates, held_indices
         )
 
-        # Always save state
         cp["candidates"] = candidates
         cp["held_indices"] = sorted(held_indices)
         save_checkpoint(cp)
@@ -589,7 +619,6 @@ def step_telegram_bots(cp: dict) -> dict:
     selected = cp["selected"]
     tokens = cp.get("tokens", {})
 
-    # Figure out which tokens we still need
     needed = []
     for c in selected:
         slug = c["name"].lower().replace(" ", "_")
@@ -759,13 +788,16 @@ def step_done(cp: dict):
     print("  │  Setup Complete!                      │")
     print("  └──────────────────────────────────────┘")
     print()
+    print(f"  Project directory: {ROOT}")
+    print()
     print("  Your friends:")
     for c in selected:
         slug = c["name"].lower().replace(" ", "_")
         print(f"    {c['name']} (friends/{slug}/)")
     print()
     print("  Run locally:")
-    print("    uv run python -m src.main")
+    print(f"    cd {ROOT}")
+    print("    uv sync && uv run python -m src.main")
     print()
     print("  Deploy to Railway:")
     print("    Set the env vars from .env on your Railway service")
@@ -792,6 +824,7 @@ def main():
     print("  ╔══════════════════════════════════════╗")
     print("  ║   Friend Group — Initialize          ║")
     print("  ╚══════════════════════════════════════╝")
+    print(f"  Project: {ROOT}")
 
     cp = load_checkpoint()
 
