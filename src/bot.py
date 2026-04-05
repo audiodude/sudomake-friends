@@ -113,7 +113,7 @@ class FriendGroup:
                 sent_msgs.append(msg)
             # Delay between split messages (simulate typing)
             if i < len(messages) - 1:
-                await asyncio.sleep(random.uniform(4.0, 12.0))
+                await asyncio.sleep(max(2.0, min(12.0, random.gauss(7.0, 2.5))))
         return sent_msgs
 
     async def setup(self):
