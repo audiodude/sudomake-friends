@@ -14,6 +14,9 @@ schedule:
   # Days off (0=Monday, 6=Sunday)
   days_off: [5, 6]
 
+# Work type: "office" (can check phone at desk) or "physical" (mostly can't)
+work_type: "office"
+
 # Chattiness: 0.0 (lurker) to 1.0 (never shuts up)
 chattiness: 0.5
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import random
 import time
 
 import anthropic
@@ -63,6 +64,18 @@ class FriendBot:
             return None
 
 
+class PendingMention:
+    """A message that mentioned a bot who wasn't available."""
+    def __init__(self, friend_name: str, sender: str, text: str,
+                 message_id: int, timestamp: float, was_at_mention: bool):
+        self.friend_name = friend_name
+        self.sender = sender
+        self.text = text
+        self.message_id = message_id
+        self.timestamp = timestamp
+        self.was_at_mention = was_at_mention
+
+
 class FriendGroup:
     """Manages the group of friend bots."""
 
@@ -76,6 +89,7 @@ class FriendGroup:
         self._bot_user_ids: set[int] = set()
         self._last_update_id: int = 0
         self._processing_lock = asyncio.Lock()
+        self._pending_mentions: list[PendingMention] = []
 
     async def setup(self):
         """Initialize all friend bots."""
@@ -101,10 +115,11 @@ class FriendGroup:
 
         logger.info("Starting message polling...")
 
-        # Run polling and initiation concurrently
+        # Run polling, initiation, and catchup concurrently
         await asyncio.gather(
             self._poll_loop(poll_bot, poll_interval),
             self._initiation_loop(),
+            self._catchup_loop(),
         )
 
     async def _poll_loop(self, poll_bot, poll_interval):
@@ -197,6 +212,98 @@ class FriendGroup:
             except Exception as e:
                 logger.exception(f"Error in initiation loop: {e}")
 
+    async def _catchup_loop(self):
+        """Periodically check if bots with pending mentions are now available."""
+        while True:
+            await asyncio.sleep(300)  # check every 5 minutes
+
+            if not self._pending_mentions:
+                continue
+
+            try:
+                still_pending = []
+                for mention in self._pending_mentions:
+                    # Drop mentions older than 6 hours — too stale
+                    age_hours = (time.time() - mention.timestamp) / 3600
+                    if age_hours > 6:
+                        logger.debug(f"Dropping stale mention for {mention.friend_name}")
+                        continue
+
+                    if mention.friend_name not in self.bots:
+                        continue
+
+                    bot = self.bots[mention.friend_name]
+                    friend_config = load_friend_config(mention.friend_name)
+                    availability = get_availability(friend_config)
+
+                    # Are they available now?
+                    if not availability["awake"]:
+                        still_pending.append(mention)
+                        continue
+
+                    # For @mentions, very likely to catch up. For name mentions, moderate.
+                    if mention.was_at_mention:
+                        catchup_chance = 0.85
+                    else:
+                        catchup_chance = 0.5
+
+                    # At work? Depends on work type
+                    if availability["at_work"]:
+                        work_type = friend_config.get("work_type", "office")
+                        if work_type != "office":
+                            still_pending.append(mention)
+                            continue
+                        catchup_chance *= 0.7
+
+                    if random.random() > catchup_chance:
+                        still_pending.append(mention)
+                        continue
+
+                    logger.info(f"{mention.friend_name} catching up on mention from {mention.sender}")
+
+                    result = await think_and_respond(
+                        client=self.claude,
+                        model=self.model,
+                        friend_name=mention.friend_name,
+                        sender=mention.sender,
+                        message=mention.text,
+                        message_id=mention.message_id,
+                        friend_config=friend_config,
+                    )
+
+                    if result and result.get("message"):
+                        await asyncio.sleep(random.randint(3, 15))
+                        sent = await bot.send_message(
+                            result["message"],
+                            reply_to_message_id=mention.message_id,
+                        )
+                        if sent:
+                            msg = ChatMessage(
+                                timestamp=time.time(),
+                                sender=mention.friend_name,
+                                text=result["message"],
+                                message_id=sent.message_id,
+                                reply_to=mention.message_id,
+                            )
+                            append_message(msg)
+                            logger.info(f"{mention.friend_name} caught up: {result['message'][:50]}...")
+                    # Whether they responded or not, they "saw" it — remove from queue
+
+                self._pending_mentions = still_pending
+
+            except Exception as e:
+                logger.exception(f"Error in catchup loop: {e}")
+
+    def _is_mentioned(self, name: str, bot: FriendBot, text: str) -> tuple[bool, bool]:
+        """Check if a friend is mentioned in a message.
+
+        Returns (mentioned_by_name, mentioned_by_at).
+        """
+        text_lower = text.lower()
+        by_name = name.lower() in text_lower
+        by_at = f"@{bot.username}".lower() in text_lower if bot.username else False
+        return by_name, by_at
+
     async def _handle_message(self, message):
         """Process an incoming message and let friends respond."""
         if not message.text:
@@ -208,7 +315,6 @@ class FriendGroup:
         # Figure out if this is from Travis or from one of the bots
         is_bot_message = sender_id in self._bot_user_ids
         if is_bot_message:
-            # Find which bot sent it
             for name, bot in self.bots.items():
                 if bot.user_id == sender_id:
                     sender_name = name
@@ -224,11 +330,6 @@ class FriendGroup:
         )
         append_message(chat_msg)
 
-        # Don't respond to ourselves
-        if is_bot_message:
-            # Other bots might respond to bot messages, but the sending bot shouldn't
-            pass
-
         # Each friend independently decides whether to respond
         tasks = []
         for name, bot in self.bots.items():
@@ -237,10 +338,25 @@ class FriendGroup:
                 continue
 
             friend_config = load_friend_config(name)
+            by_name, by_at = self._is_mentioned(name, bot, message.text)
+            mentioned = by_name or by_at
 
             # Schedule gate — are they even "around" right now?
-            if not should_respond(friend_config, is_bot_message=is_bot_message):
-                logger.debug(f"{name} is unavailable (schedule/chance)")
+            if not should_respond(friend_config, is_bot_message=is_bot_message,
+                                  mentioned=mentioned):
+                # If they were mentioned but unavailable, queue for later
+                if mentioned:
+                    self._pending_mentions.append(PendingMention(
+                        friend_name=name,
+                        sender=sender_name,
+                        text=message.text,
+                        message_id=message.message_id,
+                        timestamp=time.time(),
+                        was_at_mention=by_at,
+                    ))
+                    logger.info(f"{name} was mentioned but unavailable — queued for later")
+                else:
+                    logger.debug(f"{name} is unavailable (schedule/chance)")
                 continue
 
             tasks.append(self._friend_consider_response(
@@ -248,7 +364,6 @@ class FriendGroup:
             ))
 
         if tasks:
-            # Run all friend "thinking" concurrently
             await asyncio.gather(*tasks, return_exceptions=True)
 
         # Periodically compact chat history

@@ -32,12 +32,18 @@ def get_availability(friend_config: dict) -> dict:
 
     chattiness = friend_config.get("chattiness", 0.5)
 
+    # work_type: "office" can check phone at desk, "physical" can't
+    work_type = friend_config.get("work_type", "office")
+
     if not awake:
         # Asleep — very unlikely to respond, but phones buzz sometimes
         responsiveness = 0.02
     elif at_work:
-        # At work — reduced but not zero
-        responsiveness = chattiness * 0.3
+        # Office workers can sneak a text; physical workers mostly can't
+        if work_type == "office":
+            responsiveness = chattiness * 0.5
+        else:
+            responsiveness = chattiness * 0.1
     elif day_off:
         # Day off — more available
         responsiveness = chattiness * 1.1
@@ -57,7 +63,8 @@ def get_availability(friend_config: dict) -> dict:
     }
 
 
-def should_respond(friend_config: dict, is_bot_message: bool = False) -> bool:
+def should_respond(friend_config: dict, is_bot_message: bool = False,
+                   mentioned: bool = False) -> bool:
     """Decide if this friend should respond right now based on schedule.
 
     This is the first gate — personality/relevance is checked separately by the LLM.
@@ -65,7 +72,19 @@ def should_respond(friend_config: dict, is_bot_message: bool = False) -> bool:
     availability = get_availability(friend_config)
     responsiveness = availability["responsiveness"]
 
-    if is_bot_message:
+    if mentioned:
+        # Being addressed directly — much more likely to respond
+        if not availability["awake"]:
+            # Asleep but mentioned — might check phone
+            responsiveness = 0.15
+        elif availability["at_work"]:
+            # At work but mentioned — will probably check
+            work_type = friend_config.get("work_type", "office")
+            responsiveness = 0.8 if work_type == "office" else 0.4
+        else:
+            # Awake and free — almost certainly responds to a direct address
+            responsiveness = 0.95
+    elif is_bot_message:
         bot_reply_chance = friend_config.get("bot_reply_chance", 0.3)
         responsiveness *= bot_reply_chance
 
