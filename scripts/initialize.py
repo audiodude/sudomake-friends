@@ -164,8 +164,13 @@ def step_user_profile(cp, paths):
         save_checkpoint(cp)
         return cp
 
+    def _on_save_sources(sources):
+        cp["sources"] = sources
+        save_checkpoint(cp)
+
     raw_context, sources = get_user_context(paths,
-                                             cached_sources=cp.get("sources"))
+                                             cached_sources=cp.get("sources"),
+                                             on_save_sources=_on_save_sources)
     cp["sources"] = sources
     save_checkpoint(cp)
 

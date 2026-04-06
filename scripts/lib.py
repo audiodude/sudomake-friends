@@ -378,14 +378,20 @@ def _extract_text_from_archive(path: Path, max_bytes: int = 30000) -> str:
 
 
 def get_user_context(paths: dict,
-                     cached_sources: list[dict] | None = None) -> tuple[str, list[dict]]:
+                     cached_sources: list[dict] | None = None,
+                     on_save_sources=None) -> tuple[str, list[dict]]:
     """Interactive loop to collect user context from multiple sources.
 
     cached_sources: list of {"label": str, "content": str} from a previous run.
+    on_save_sources(sources): called after each source is added for checkpointing.
     Returns (joined_context, sources_list) where sources_list can be checkpointed.
     """
     all_parts = []
     sources = []
+
+    def _save():
+        if on_save_sources:
+            on_save_sources(sources)
 
     # Offer to reuse cached sources
     if cached_sources:
@@ -427,6 +433,7 @@ def get_user_context(paths: dict,
             if result:
                 all_parts.append(result)
                 sources.append({"label": entry, "content": result})
+                _save()
                 print(f"  Added. Enter another, or q to finish.")
             else:
                 print("  Got nothing from that URL. Try another?")
@@ -446,6 +453,7 @@ def get_user_context(paths: dict,
             if content:
                 all_parts.append(f"File ({path.name}):\n{content}")
                 sources.append({"label": path.name, "content": f"File ({path.name}):\n{content}"})
+                _save()
                 print(f"  Added {path.name}. Enter another, or q to finish.")
             else:
                 print(f"  No readable text found in {path.name}.")
@@ -454,6 +462,7 @@ def get_user_context(paths: dict,
         # Treat as free-text description
         all_parts.append(f"Self-description:\n{entry}")
         sources.append({"label": "description", "content": f"Self-description:\n{entry}"})
+        _save()
         print(f"  Added. Enter another, or q to finish.")
 
     return "\n\n---\n\n".join(all_parts), sources
