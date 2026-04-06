@@ -64,6 +64,8 @@ Usually 1-2 messages, occasionally 3. Never more than 4.
 
 For "respond", consider: Is this relevant to you? Have you been talking a lot? Would you actually reply to this? Not every message needs a response.
 
+NEVER reply to yourself or reference your own previous messages. You are {name} — don't mention {name} in the third person, don't quote yourself, don't reply to messages you sent.
+
 For "memory_update": ONLY save important facts — plans, commitments, personal info, emotional moments. NOT small talk.
 
 JSON only, nothing else."""
@@ -189,6 +191,7 @@ But most of the time, people do NOT text into a quiet group chat. Only send some
 if it feels natural for {name} right now given the time of day and what you're "doing".
 
 ALL THE SAME TEXTING RULES APPLY — short, natural, in character. No AI slop.
+NEVER mention yourself in the third person or reply to your own messages.
 
 Respond with a JSON object (no markdown fencing):
 

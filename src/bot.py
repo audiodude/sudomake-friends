@@ -463,7 +463,15 @@ class FriendGroup:
                 delay = result.get("delay_seconds", 3)
                 await asyncio.sleep(delay)
 
+                # Prevent self-replies
                 reply_to = result.get("reply_to_message_id")
+                if reply_to:
+                    recent = load_messages(limit=50)
+                    for msg in recent:
+                        if msg.message_id == reply_to and msg.sender == name:
+                            reply_to = None
+                            break
+
                 sent = await self._send_messages(bot, name, result["messages"],
                                                   reply_to_message_id=reply_to)
                 if sent:
