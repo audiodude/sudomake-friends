@@ -2190,7 +2190,7 @@ def step_telegram_bots(cp, paths):
     print("  | by one and paste the tokens below.                         |")
     print("  |                                                            |")
     print("  | After creating ALL bots, you MUST also:                    |")
-    print("  |   /setprivacy > select each bot > Disable                  |")
+    print("  |   /setprivacy > select each bot > Disable (group privacy)  |")
     print("  | (This lets bots see all group messages)                    |")
     print("  +------------------------------------------------------------+")
 
@@ -2262,7 +2262,7 @@ def step_telegram_group(cp, paths):
         else:
             print("  No group messages found. Make sure you:")
             print("    - Added the bots to the group")
-            print("    - Disabled privacy mode (/setprivacy > Disable)")
+            print("    - Disabled group privacy (/setprivacy > Disable)")
             print("    - Removed and re-added bots after disabling privacy")
             print("    - Sent a message AFTER all of the above")
             retry = input("\n  Try again? [Y/n]: ").strip().lower()
