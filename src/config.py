@@ -7,9 +7,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-FRIENDS_DIR = ROOT / "friends"
-# Persistent data dir — use RAILWAY_VOLUME_MOUNT_PATH if available, else project root
-DATA_DIR = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", str(ROOT)))
+FRIENDS_DIR = Path(os.environ.get("FRIENDS_DIR", str(ROOT / "friends")))
+# Persistent data dir — use volume mount if available, else project root
+DATA_DIR = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH",
+                os.environ.get("DATA_DIR", str(ROOT))))
 
 
 def _resolve_env(value: str) -> str:
