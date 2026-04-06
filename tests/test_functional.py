@@ -578,3 +578,38 @@ class TestSetupDetection:
             and len(existing) > 0
         )
         assert setup_complete is True
+
+
+# ─── Timezone validation ──────────────────────────────────────────────────────
+
+class TestTimezoneValidation:
+
+    def test_valid_timezone_passes(self):
+        assert lib._validate_timezone("America/New_York") == "America/New_York"
+        assert lib._validate_timezone("Europe/Berlin") == "Europe/Berlin"
+        assert lib._validate_timezone("UTC") == "UTC"
+
+    def test_spaces_replaced(self):
+        assert lib._validate_timezone("America/Los Angeles") == "America/Los_Angeles"
+        assert lib._validate_timezone("America/New York") == "America/New_York"
+
+    def test_garbage_falls_back_to_default(self):
+        assert lib._validate_timezone("NotA/Timezone") == "America/New_York"
+        assert lib._validate_timezone("asdf") == "America/New_York"
+
+    def test_location_helps_guess(self):
+        assert lib._validate_timezone("garbage", "Berlin, Germany") == "Europe/Berlin"
+        assert lib._validate_timezone("nope", "San Francisco, CA") == "America/Los_Angeles"
+        assert lib._validate_timezone("bad", "Tokyo, Japan") == "Asia/Tokyo"
+
+    def test_empty_string_falls_back(self):
+        assert lib._validate_timezone("") == "America/New_York"
+
+    def test_text_to_candidate_validates(self):
+        candidate = {"name": "Test", "age": 30, "location": "Berlin, Germany",
+                     "occupation": "Dev", "vibe": "Cool", "why": "Yes",
+                     "timezone": "UTC", "chattiness": 0.5}
+        text = "Name: Test\nTimezone: Europe/Blerlin\nLocation: Berlin, Germany"
+        result = lib.text_to_candidate(text, candidate)
+        # Bad timezone "Europe/Blerlin" should get fixed via location
+        assert result["timezone"] == "Europe/Berlin"

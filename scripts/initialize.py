@@ -1788,6 +1788,8 @@ def text_to_candidate(text: str, original: dict) -> dict:
             c["why"] = value
         elif key == "timezone":
             c["timezone"] = value
+    # Validate timezone after all fields are parsed (location may help)
+    c["timezone"] = _validate_timezone(c.get("timezone", ""), c.get("location", ""))
     return c
 
 
@@ -1900,6 +1902,55 @@ def generate_souls_for_selected(
     return souls
 
 
+def _validate_timezone(tz_str: str, location: str = "") -> str:
+    """Validate a timezone string. Try to fix it, fall back to America/New_York."""
+    from zoneinfo import ZoneInfo, available_timezones
+
+    # Basic cleanup
+    tz_str = tz_str.strip().replace(" ", "_")
+
+    # Try it directly
+    try:
+        ZoneInfo(tz_str)
+        return tz_str
+    except (KeyError, Exception):
+        pass
+
+    # Try common fixes
+    for prefix in ["America/", "Europe/", "Asia/", "Australia/", "Pacific/", "Africa/"]:
+        candidate = prefix + tz_str.split("/")[-1]
+        try:
+            ZoneInfo(candidate)
+            return candidate
+        except (KeyError, Exception):
+            continue
+
+    # Try to guess from location
+    if location:
+        loc_lower = location.lower()
+        # Map common cities/regions to timezones
+        city_map = {
+            "new york": "America/New_York", "nyc": "America/New_York",
+            "los angeles": "America/Los_Angeles", "la": "America/Los_Angeles",
+            "san francisco": "America/Los_Angeles", "sf": "America/Los_Angeles",
+            "chicago": "America/Chicago", "denver": "America/Denver",
+            "seattle": "America/Los_Angeles", "portland": "America/Los_Angeles",
+            "boston": "America/New_York", "philadelphia": "America/New_York",
+            "austin": "America/Chicago", "houston": "America/Chicago",
+            "atlanta": "America/New_York", "miami": "America/New_York",
+            "london": "Europe/London", "berlin": "Europe/Berlin",
+            "paris": "Europe/Paris", "amsterdam": "Europe/Amsterdam",
+            "tokyo": "Asia/Tokyo", "sydney": "Australia/Sydney",
+            "toronto": "America/Toronto", "vancouver": "America/Vancouver",
+            "mexico city": "America/Mexico_City",
+        }
+        for city, tz in city_map.items():
+            if city in loc_lower:
+                return tz
+
+    return "America/New_York"
+
+
 def create_friend_dir(friends_dir: Path, name: str, soul: str,
                       candidate: dict) -> str:
     slug = name.lower().replace(" ", "_")
@@ -1910,7 +1961,10 @@ def create_friend_dir(friends_dir: Path, name: str, soul: str,
     (friend_dir / "MEMORY.md").write_text("# Memory\n")
 
     config = {
-        "timezone": candidate.get("timezone", "America/New_York").replace(" ", "_"),
+        "timezone": _validate_timezone(
+            candidate.get("timezone", "America/New_York"),
+            candidate.get("location", ""),
+        ),
         "schedule": {
             "wake_up": "08:00",
             "sleep_at": "23:00",
