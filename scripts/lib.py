@@ -377,14 +377,34 @@ def _extract_text_from_archive(path: Path, max_bytes: int = 30000) -> str:
     return "\n\n".join(parts)
 
 
-def get_user_context(paths: dict) -> str:
-    """Interactive loop to collect user context from multiple sources."""
+def get_user_context(paths: dict,
+                     cached_sources: list[dict] | None = None) -> tuple[str, list[dict]]:
+    """Interactive loop to collect user context from multiple sources.
+
+    cached_sources: list of {"label": str, "content": str} from a previous run.
+    Returns (joined_context, sources_list) where sources_list can be checkpointed.
+    """
+    all_parts = []
+    sources = []
+
+    # Offer to reuse cached sources
+    if cached_sources:
+        print(f"\n  Found {len(cached_sources)} source(s) from last time:")
+        for s in cached_sources:
+            print(f"    - {s['label']}")
+        reuse = input("  Reuse these? [Y/n]: ").strip().lower()
+        if reuse in ("", "y", "yes"):
+            for s in cached_sources:
+                all_parts.append(s["content"])
+                sources.append(s)
+            print(f"  Loaded {len(sources)} cached source(s).")
+        else:
+            print("  Starting fresh.")
+
     print("\n  Tell me about yourself. You can provide as many sources as you want.")
     print("  The more context, the better your friends will match you.\n")
     print("  Enter a URL, file path, or type a description.")
     print("  Type ? for supported platforms, q when done.\n")
-
-    all_parts = []
 
     while True:
         prompt = f"  [{len(all_parts)} source{'s' if len(all_parts) != 1 else ''}] > "
@@ -406,6 +426,7 @@ def get_user_context(paths: dict) -> str:
             result = _fetch_url(entry, paths)
             if result:
                 all_parts.append(result)
+                sources.append({"label": entry, "content": result})
                 print(f"  Added. Enter another, or q to finish.")
             else:
                 print("  Got nothing from that URL. Try another?")
@@ -414,7 +435,6 @@ def get_user_context(paths: dict) -> str:
         # File path?
         path = Path(entry).expanduser()
         if path.exists() and path.is_file():
-            # Handle archives
             if path.suffix in (".tgz", ".gz", ".tar", ".zip"):
                 content = _extract_text_from_archive(path)
             else:
@@ -425,6 +445,7 @@ def get_user_context(paths: dict) -> str:
                     continue
             if content:
                 all_parts.append(f"File ({path.name}):\n{content}")
+                sources.append({"label": path.name, "content": f"File ({path.name}):\n{content}"})
                 print(f"  Added {path.name}. Enter another, or q to finish.")
             else:
                 print(f"  No readable text found in {path.name}.")
@@ -432,9 +453,10 @@ def get_user_context(paths: dict) -> str:
 
         # Treat as free-text description
         all_parts.append(f"Self-description:\n{entry}")
+        sources.append({"label": "description", "content": f"Self-description:\n{entry}"})
         print(f"  Added. Enter another, or q to finish.")
 
-    return "\n\n---\n\n".join(all_parts)
+    return "\n\n---\n\n".join(all_parts), sources
 
 
 # ─── Selection UI ─────────────────────────────────────────────────────────────

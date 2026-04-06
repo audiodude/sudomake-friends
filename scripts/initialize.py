@@ -164,7 +164,11 @@ def step_user_profile(cp, paths):
         save_checkpoint(cp)
         return cp
 
-    raw_context = get_user_context(paths)
+    raw_context, sources = get_user_context(paths,
+                                             cached_sources=cp.get("sources"))
+    cp["sources"] = sources
+    save_checkpoint(cp)
+
     print("\n  Compiling your profile...")
     profile = compile_profile(client, raw_context)
     save_profile(paths, profile)
