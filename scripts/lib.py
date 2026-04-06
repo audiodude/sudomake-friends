@@ -459,6 +459,11 @@ def get_user_context(paths: dict,
                 print(f"  No readable text found in {path.name}.")
             continue
 
+        # Check if it looks like a path that doesn't exist
+        if "/" in entry or entry.startswith("~") or entry.startswith("."):
+            print(f"  File not found: {entry}")
+            continue
+
         # Treat as free-text description
         all_parts.append(f"Self-description:\n{entry}")
         sources.append({"label": "description", "content": f"Self-description:\n{entry}"})
