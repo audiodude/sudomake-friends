@@ -2473,7 +2473,32 @@ def main():
 
     cp = load_checkpoint()
 
-    if cp["step"] != "start":
+    # Detect completed setup: .env exists, friends exist, no in-progress checkpoint
+    existing_friends = get_existing_friend_names(paths["friends"])
+    setup_complete = (
+        paths["env"].exists()
+        and len(existing_friends) > 0
+        and cp["step"] == "start"
+    )
+
+    if setup_complete:
+        print(f"\n  Found {len(existing_friends)} friend(s): {', '.join(existing_friends)}")
+        print()
+        choice = input("  [r]edeploy, [a]dd friends, or [s]tart over? [r/a/s]: ").strip().lower()
+        if choice == "s":
+            clear_checkpoint()
+            cp = {"step": "start"}
+        elif choice == "a":
+            # Need a profile for generation — if not in checkpoint, collect one
+            if not cp.get("user_context"):
+                cp["step"] = "user_profile"
+            else:
+                cp["step"] = "select_friends"
+        else:
+            # Redeploy
+            cp["step"] = "deploy"
+
+    elif cp["step"] != "start":
         print(f"\n  Resuming from: {cp['step']}")
         reset = input("  Start over? [y/N]: ").strip().lower()
         if reset == "y":
