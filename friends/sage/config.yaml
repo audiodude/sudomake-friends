@@ -1,0 +1,11 @@
+bot_reply_chance: 0.3
+chattiness: 0.6
+schedule:
+  days_off:
+  - 5
+  - 6
+  sleep_at: '23:00'
+  wake_up: 08:00
+  work_end: '17:00'
+  work_start: 09:00
+timezone: America/New_York

@@ -1,4 +1,4 @@
-# Friend Group Configuration
+# Sudomake Friends Configuration
 anthropic_api_key: "${ANTHROPIC_API_KEY}"
 model: "claude-4-sonnet-20250514"
 

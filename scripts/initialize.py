@@ -8,7 +8,7 @@
 # ///
 """Interactive friend group initialization — single self-contained script.
 
-Run directly:  uv run https://raw.githubusercontent.com/audiodude/friend-group/main/scripts/initialize.py
+Run directly:  uv run https://raw.githubusercontent.com/audiodude/sudomake-friends/main/scripts/initialize.py
 Or locally:    uv run scripts/initialize.py
 """
 
@@ -36,9 +36,9 @@ import yaml
 MODEL = "claude-4-sonnet-20250514"
 CANDIDATE_COUNT = 8
 SCRAPE_TIMEOUT = 180
-REPO_URL = "https://github.com/audiodude/friend-group.git"
-TARBALL_URL = "https://github.com/audiodude/friend-group/archive/main.tar.gz"
-HOME_DIR = Path.home() / ".friend-group"
+REPO_URL = "https://github.com/audiodude/sudomake-friends.git"
+TARBALL_URL = "https://github.com/audiodude/sudomake-friends/archive/main.tar.gz"
+HOME_DIR = Path.home() / ".sudomake-friends"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -208,7 +208,7 @@ def _github_fetch(url: str, cache_dir: Path) -> str:
         return cache_file.read_text()
 
     print(f"  Fetching GitHub @{username}...")
-    headers = {"User-Agent": "friend-group/1.0"}
+    headers = {"User-Agent": "sudomake-friends/1.0"}
 
     try:
         req = urllib.request.Request(f"{API}/users/{username}", headers=headers)
@@ -587,7 +587,7 @@ def _devto_fetch(url: str, cache_dir: Path) -> str:
     try:
         req = urllib.request.Request(
             f"{API}/users/by_username?url={username}",
-            headers={"User-Agent": "friend-group/1.0"},
+            headers={"User-Agent": "sudomake-friends/1.0"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             user = json.loads(resp.read().decode())
@@ -603,7 +603,7 @@ def _devto_fetch(url: str, cache_dir: Path) -> str:
     try:
         req = urllib.request.Request(
             f"{API}/articles?username={username}&per_page=30",
-            headers={"User-Agent": "friend-group/1.0"},
+            headers={"User-Agent": "sudomake-friends/1.0"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             articles = json.loads(resp.read().decode())
@@ -696,7 +696,7 @@ def _discogs_fetch(url: str, cache_dir: Path) -> str:
 
     print(f"  Fetching Discogs @{username}...")
     parts = [f"Discogs: {username}"]
-    headers = {"User-Agent": "friend-group/1.0"}
+    headers = {"User-Agent": "sudomake-friends/1.0"}
 
     try:
         api_url = (
@@ -808,7 +808,7 @@ def _pixelfed_fetch(url: str, cache_dir: Path) -> str:
     if platform == "Lemmy":
         try:
             api_url = f"https://{instance}/api/v3/user?username={username}&limit=50"
-            req = urllib.request.Request(api_url, headers={"User-Agent": "friend-group/1.0"})
+            req = urllib.request.Request(api_url, headers={"User-Agent": "sudomake-friends/1.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
 
@@ -893,7 +893,7 @@ def _wikipedia_fetch(url: str, cache_dir: Path) -> str:
         f"&rvprop=content&rvslots=main&format=json"
     )
     try:
-        req = urllib.request.Request(api_url, headers={"User-Agent": "friend-group/1.0"})
+        req = urllib.request.Request(api_url, headers={"User-Agent": "sudomake-friends/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
 
@@ -919,7 +919,7 @@ def _wikipedia_fetch(url: str, cache_dir: Path) -> str:
             f"?action=query&list=usercontribs&ucuser={username}"
             f"&uclimit=50&ucprop=title|comment&format=json"
         )
-        req = urllib.request.Request(contrib_url, headers={"User-Agent": "friend-group/1.0"})
+        req = urllib.request.Request(contrib_url, headers={"User-Agent": "sudomake-friends/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
 
@@ -963,7 +963,7 @@ def _hackernews_fetch(url: str, cache_dir: Path) -> str:
     try:
         req = urllib.request.Request(
             f"https://hacker-news.firebaseio.com/v0/user/{username}.json",
-            headers={"User-Agent": "friend-group/1.0"},
+            headers={"User-Agent": "sudomake-friends/1.0"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             user = json.loads(resp.read().decode())
@@ -976,7 +976,7 @@ def _hackernews_fetch(url: str, cache_dir: Path) -> str:
 
     try:
         search_url = f"https://hn.algolia.com/api/v1/search?tags=comment,author_{username}&hitsPerPage=100"
-        req = urllib.request.Request(search_url, headers={"User-Agent": "friend-group/1.0"})
+        req = urllib.request.Request(search_url, headers={"User-Agent": "sudomake-friends/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
         comments = []
@@ -993,7 +993,7 @@ def _hackernews_fetch(url: str, cache_dir: Path) -> str:
 
     try:
         search_url = f"https://hn.algolia.com/api/v1/search?tags=story,author_{username}&hitsPerPage=50"
-        req = urllib.request.Request(search_url, headers={"User-Agent": "friend-group/1.0"})
+        req = urllib.request.Request(search_url, headers={"User-Agent": "sudomake-friends/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
         stories = [h.get("title", "") for h in data.get("hits", []) if h.get("title")]
@@ -2326,7 +2326,7 @@ def step_deploy(cp, paths):
 
     if choice == "1":
         print("\n  Downloading source...")
-        tmp_dir = Path(tempfile.mkdtemp(prefix="friend-group-"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="sudomake-friends-"))
         tarball_path = tmp_dir / "main.tar.gz"
 
         try:
@@ -2349,11 +2349,11 @@ def step_deploy(cp, paths):
         with tarfile.open(str(tarball_path), "r:gz") as tf:
             tf.extractall(str(tmp_dir))
 
-        build_dir = tmp_dir / "friend-group-main"
+        build_dir = tmp_dir / "sudomake-friends-main"
 
         print("  Building Docker image...")
         r = subprocess.run(
-            ["docker", "build", "-t", "friend-group", str(build_dir)],
+            ["docker", "build", "-t", "sudomake-friends", str(build_dir)],
             capture_output=True, text=True,
         )
         if r.returncode != 0:
@@ -2371,25 +2371,25 @@ def step_deploy(cp, paths):
         data_dir.mkdir(parents=True, exist_ok=True)
 
         # Stop existing container if any
-        subprocess.run(["docker", "rm", "-f", "friend-group"],
+        subprocess.run(["docker", "rm", "-f", "sudomake-friends"],
                        capture_output=True, text=True)
 
         print("  Starting container...")
         r = subprocess.run([
             "docker", "run", "-d",
-            "--name", "friend-group",
+            "--name", "sudomake-friends",
             "--env-file", str(paths["env"]),
             "-v", f"{paths['friends']}:/app/friends-data",
             "-v", f"{data_dir}:/app/data",
             "-e", "FRIENDS_DIR=/app/friends-data",
             "-e", "DATA_DIR=/app/data",
             "--restart", "unless-stopped",
-            "friend-group",
+            "sudomake-friends",
         ], capture_output=True, text=True)
 
         if r.returncode == 0:
             print("  Running! Check logs with:")
-            print("    docker logs -f friend-group")
+            print("    docker logs -f sudomake-friends")
         else:
             print(f"  Error starting container: {r.stderr[:300]}")
 
@@ -2400,15 +2400,15 @@ def step_deploy(cp, paths):
         print(f"\n  Run locally with Docker later:")
         print(f"    # Download and build")
         print(f"    curl -L {TARBALL_URL} | tar xz")
-        print(f"    docker build -t friend-group friend-group-main/")
-        print(f"    docker run -d --name friend-group \\")
+        print(f"    docker build -t sudomake-friends sudomake-friends-main/")
+        print(f"    docker run -d --name sudomake-friends \\")
         print(f"      --env-file {paths['env']} \\")
         print(f"      -v {paths['friends']}:/app/friends-data \\")
         print(f"      -v {root / 'data'}:/app/data \\")
         print(f"      -e FRIENDS_DIR=/app/friends-data \\")
         print(f"      -e DATA_DIR=/app/data \\")
         print(f"      --restart unless-stopped \\")
-        print(f"      friend-group")
+        print(f"      sudomake-friends")
 
     print()
     retry = input("  Try a different deploy option? [y/N]: ").strip().lower()
@@ -2466,7 +2466,7 @@ def main():
 
     print()
     print("  +======================================+")
-    print("  ||   Friend Group -- Initialize        ||")
+    print("  ||   Sudomake Friends -- Initialize     ||")
     print("  +======================================+")
 
     # Ensure home directory exists

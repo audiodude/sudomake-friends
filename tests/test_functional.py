@@ -1,4 +1,4 @@
-"""Functional tests for friend-group scripts."""
+"""Functional tests for sudomake-friends scripts."""
 
 import curses
 import json

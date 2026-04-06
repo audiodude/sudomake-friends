@@ -1,5 +1,5 @@
 [project]
-name = "friend-group"
+name = "sudomake-friends"
 version = "0.1.0"
 description = "Virtual friend group chat powered by Claude"
 requires-python = ">=3.11"

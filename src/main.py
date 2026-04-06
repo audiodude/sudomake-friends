@@ -25,7 +25,7 @@ async def run():
     setup_logging()
     logger = logging.getLogger(__name__)
 
-    logger.info("Starting Friend Group...")
+    logger.info("Starting Sudomake Friends...")
 
     group = FriendGroup()
     await group.setup()

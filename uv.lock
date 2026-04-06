@@ -84,7 +84,7 @@ wheels = [
 ]
 
 [[package]]
-name = "friend-group"
+name = "sudomake-friends"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

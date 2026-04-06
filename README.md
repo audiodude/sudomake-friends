@@ -1,4 +1,4 @@
-# Friend Group
+# Sudomake Friends
 
 A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
@@ -9,7 +9,7 @@ Each friend has their own personality, persistent memory, timezone-aware schedul
 You need [uv](https://docs.astral.sh/uv/) installed. Then:
 
 ```bash
-uv run https://raw.githubusercontent.com/audiodude/friend-group/main/scripts/initialize.py
+uv run https://raw.githubusercontent.com/audiodude/sudomake-friends/main/scripts/initialize.py
 ```
 
 That's it. The wizard handles everything: cloning the repo, collecting your profile, generating friends, setting up Telegram bots, and deploying. Quit anytime — it checkpoints your progress.
