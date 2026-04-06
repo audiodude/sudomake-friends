@@ -2375,6 +2375,10 @@ def step_deploy(cp, paths):
         if r.returncode == 0:
             print("  Running! Check logs with:")
             print("    docker logs -f sudomake-friends")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            cp["step"] = "done"
+            save_checkpoint(cp)
+            return cp
         else:
             print(f"  Error starting container: {r.stderr[:300]}")
 
