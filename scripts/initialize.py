@@ -2450,9 +2450,12 @@ def main():
         sys.argv.remove("--start-over")
 
     print()
-    print("  +======================================+")
-    print("  ||   Sudomake Friends -- Initialize     ||")
-    print("  +======================================+")
+    title = "Sudomake Friends -- Initialize"
+    inner = f"   {title}   "
+    w = len(inner) + 2  # +2 for the || on each side, -2 for the + on each side = same
+    print(f"  +{'=' * (len(inner) + 2)}+")
+    print(f"  ||{inner}||")
+    print(f"  +{'=' * (len(inner) + 2)}+")
 
     # Ensure home directory exists
     HOME_DIR.mkdir(parents=True, exist_ok=True)
