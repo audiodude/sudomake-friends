@@ -1,9 +1,0 @@
-timezone: "Europe/Berlin"
-schedule:
-  wake_up: "08:30"
-  sleep_at: "01:00"
-  work_start: "10:00"
-  work_end: "18:00"
-  days_off: [5, 6]
-chattiness: 0.45
-bot_reply_chance: 0.35
