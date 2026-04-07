@@ -1485,6 +1485,48 @@ def get_user_context(paths: dict,
         if on_save_sources:
             on_save_sources(sources)
 
+    # Check for sources.txt in current directory
+    sources_file = Path("sources.txt")
+    if sources_file.exists() and not cached_sources:
+        lines = [l.strip() for l in sources_file.read_text().splitlines() if l.strip()]
+        if lines:
+            print(f"\n  Found sources.txt with {len(lines)} source(s):")
+            for l in lines:
+                print(f"    - {l}")
+            use_file = input("  Use these sources? [Y/n]: ").strip().lower()
+            if use_file in ("", "y", "yes"):
+                for line in lines:
+                    print(f"\n  Processing: {line}")
+                    if line.startswith("http://") or line.startswith("https://"):
+                        result = _fetch_url(line, paths)
+                        if result:
+                            all_parts.append(result)
+                            sources.append({"label": line, "content": result})
+                            _save()
+                            print(f"  Added.")
+                        else:
+                            print(f"  Got nothing from {line}. Skipping.")
+                    else:
+                        fpath = Path(line).expanduser()
+                        if fpath.exists() and fpath.is_file():
+                            try:
+                                content = fpath.read_bytes().decode("utf-8", errors="replace")[:15000]
+                            except Exception:
+                                print(f"  Can't read {fpath.name}. Skipping.")
+                                continue
+                            if content:
+                                all_parts.append(f"File ({fpath.name}):\n{content}")
+                                sources.append({"label": fpath.name, "content": f"File ({fpath.name}):\n{content}"})
+                                _save()
+                                print(f"  Added {fpath.name}.")
+                        else:
+                            # Treat as free-text description
+                            all_parts.append(f"Self-description:\n{line}")
+                            sources.append({"label": "description", "content": f"Self-description:\n{line}"})
+                            _save()
+                            print(f"  Added as description.")
+                print(f"\n  Loaded {len(sources)} source(s) from sources.txt.")
+
     # Offer to reuse cached sources
     if cached_sources:
         print(f"\n  Found {len(cached_sources)} source(s) from last time:")
@@ -1499,9 +1541,12 @@ def get_user_context(paths: dict,
         else:
             print("  Starting fresh.")
 
-    print("\n  Tell me about yourself. You can provide as many sources as you want.")
-    print("  The more context, the better your friends will match you.\n")
-    print("  Enter a URL, file path, or type a description.")
+    if all_parts:
+        print(f"\n  You can add more sources, or q to continue with what you have.")
+    else:
+        print("\n  Tell me about yourself. You can provide as many sources as you want.")
+        print("  The more context, the better your friends will match you.")
+    print("\n  Enter a URL, file path, or type a description.")
     print("  Type ? for supported platforms, q when done.\n")
 
     while True:
@@ -1561,6 +1606,14 @@ def get_user_context(paths: dict,
         sources.append({"label": "description", "content": f"Self-description:\n{entry}"})
         _save()
         print(f"  Added. Enter another, or q to finish.")
+
+    # Offer to save sources for next time
+    source_labels = [s["label"] for s in sources if s["label"] != "description"]
+    if source_labels and not sources_file.exists():
+        save = input("\n  Save source list to ./sources.txt for next time? [Y/n]: ").strip().lower()
+        if save in ("", "y", "yes"):
+            sources_file.write_text("\n".join(source_labels) + "\n")
+            print(f"  Saved {len(source_labels)} source(s) to sources.txt")
 
     return "\n\n---\n\n".join(all_parts), sources
 
