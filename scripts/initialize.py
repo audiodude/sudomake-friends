@@ -2615,7 +2615,14 @@ def main():
     if setup_complete:
         print(f"\n  Found {len(existing_friends)} friend(s): {', '.join(existing_friends)}")
         print()
-        choice = input("  [r]edeploy, [a]dd friends, or [s]tart over? [r/a/s]: ").strip().lower()
+        options = "[r]edeploy, [a]dd friends, [s]tart over"
+        keys = "r/a/s"
+        # If checkpoint has an incomplete step, offer resume
+        if cp.get("step") and cp["step"] not in ("start", "done", "deploy"):
+            print(f"  (In-progress setup detected at step: {cp['step']})")
+            options += ", [c]ontinue setup"
+            keys += "/c"
+        choice = input(f"  {options}? [{keys}]: ").strip().lower()
         if choice == "s":
             clear_checkpoint()
             cp = {"step": "start"}
@@ -2625,14 +2632,16 @@ def main():
                 cp["step"] = "user_profile"
             else:
                 cp["step"] = "select_friends"
+        elif choice == "c":
+            pass  # Continue from current checkpoint step
         else:
             # Redeploy
             cp["step"] = "deploy"
 
     elif cp["step"] != "start":
         print(f"\n  Resuming from: {cp['step']}")
-        reset = input("  Start over? [y/N]: ").strip().lower()
-        if reset == "y":
+        choice = input("  [c]ontinue, or [s]tart over? [c/s]: ").strip().lower()
+        if choice == "s":
             clear_checkpoint()
             cp = {"step": "start"}
 
