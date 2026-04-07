@@ -1972,25 +1972,15 @@ def run_selection_loop(
             held = [candidates[i] for i in sorted(held_indices)]
             n_new = CANDIDATE_COUNT - len(held)
             print(f"\n  Re-rolling {n_new} candidates (keeping {len(held)} invited)...")
+            # Request extra to handle LLM returning fewer than asked
             new_candidates = generate_candidates(
                 client, user_context, held,
                 existing_friends=existing_friends, count=n_new,
             )
-            rebuilt = []
-            new_iter = iter(new_candidates)
-            new_held_indices = set()
-            for i, c in enumerate(candidates):
-                if i in held_indices:
-                    new_held_indices.add(len(rebuilt))
-                    rebuilt.append(c)
-                else:
-                    try:
-                        rebuilt.append(next(new_iter))
-                    except StopIteration:
-                        pass
-            for c in new_iter:
-                rebuilt.append(c)
-            candidates = rebuilt
+            # Held first, then new ones, cap at CANDIDATE_COUNT
+            candidates = held + new_candidates
+            candidates = candidates[:CANDIDATE_COUNT]
+            new_held_indices = set(range(len(held)))
             held_indices = new_held_indices
             if on_save:
                 on_save(candidates, held_indices)
