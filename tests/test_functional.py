@@ -661,12 +661,12 @@ class TestStepHistory:
         assert result["step"] == "deploy"
         assert not (history_paths["friends"] / "HISTORY.md").exists()
 
-    def test_skip_if_already_exists(self, history_paths):
+    def test_keep_if_already_exists(self, history_paths):
         (history_paths["friends"] / "HISTORY.md").write_text("existing history")
         cp = {"step": "history"}
-        result = lib.step_history(cp, history_paths)
+        with patch("builtins.input", return_value="n"):
+            result = lib.step_history(cp, history_paths)
         assert result["step"] == "deploy"
-        # Should not prompt at all
         assert (history_paths["friends"] / "HISTORY.md").read_text() == "existing history"
 
     def test_write_directly(self, history_paths):

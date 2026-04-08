@@ -2283,6 +2283,17 @@ def step_select_friends(cp, paths):
     user_context = cp["user_context"]
     existing = get_existing_friend_names(paths["friends"])
 
+    # If friends already exist, offer to keep them
+    if existing and not cp.get("candidates"):
+        print(f"\n  Current friends: {', '.join(existing)}")
+        keep = input("  Keep these friends? [Y/n]: ").strip().lower()
+        if keep in ("", "y", "yes"):
+            cp["step"] = "telegram_bots"
+            # Rebuild selected from existing for downstream steps
+            cp["selected"] = [{"name": n} for n in existing]
+            save_checkpoint(cp)
+            return cp
+
     candidates = cp.get("candidates")
     held_indices = set(cp.get("held_indices", []))
     if candidates:
@@ -2515,12 +2526,14 @@ def step_history(cp, paths):
     friends_dir = paths["friends"]
     history_path = friends_dir / "HISTORY.md"
 
-    # Skip if already exists
+    # If already exists, offer to keep or redo
     if history_path.exists():
         print(f"\n  HISTORY.md already exists.")
-        cp["step"] = "deploy"
-        save_checkpoint(cp)
-        return cp
+        redo = input("  Regenerate? [y/N]: ").strip().lower()
+        if redo != "y":
+            cp["step"] = "deploy"
+            save_checkpoint(cp)
+            return cp
 
     print()
     choice = input("  Generate a shared history for your friend group? [d]isplay / [w]rite / [n]o: ").strip().lower()
@@ -2767,18 +2780,15 @@ def main():
         has_incomplete = cp.get("step") and cp["step"] not in ("start", "done", "deploy")
         if has_incomplete:
             print(f"  (In-progress setup at step: {cp['step']})")
-            choice = input("  [r]esume, [s]tart over, [d]eploy, or [a]dd friend? [r/s/d/a]: ").strip().lower()
+            choice = input("  [r]esume, [a]djust, [s]tart over, or [d]eploy? [r/a/s/d]: ").strip().lower()
         else:
-            choice = input("  [s]tart over, [d]eploy, or [a]dd friend? [s/d/a]: ").strip().lower()
+            choice = input("  [a]djust, [s]tart over, or [d]eploy? [a/s/d]: ").strip().lower()
         if choice == "s":
             clear_checkpoint()
             cp = {"step": "start"}
         elif choice == "a":
-            # Need a profile for generation — if not in checkpoint, collect one
-            if not cp.get("user_context"):
-                cp["step"] = "user_profile"
-            else:
-                cp["step"] = "select_friends"
+            # Walk through all steps, each will offer to keep or redo
+            cp["step"] = "start"
         elif choice == "r" and has_incomplete:
             pass  # continue from current checkpoint step
         else:
