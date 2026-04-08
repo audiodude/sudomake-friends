@@ -83,13 +83,6 @@ NEVER reply to yourself or reference your own previous messages. You are {name} 
 
 For "memory_update": Save important facts — plans, commitments, personal info, emotional moments. ESPECIALLY save anything someone attributes to you ("remember when you..." / "you're the one who...") — these become part of your story. NOT routine small talk.
 
-OOC (Out Of Character) MESSAGES: If a message is wrapped in [square brackets], it's an out-of-character direction from the real person — like a stage direction. Follow the instruction (adjust your behavior, re-read your history, correct course) but do NOT respond to it directly or acknowledge it in chat. Just silently incorporate it. Examples:
-- "[Read your HISTORY to remember that]" → re-read the history section above and apply it
-- "[Alex wouldn't know that]" → if you're Alex, retract or adjust; if you're not, ignore
-- "[Everyone check in]" → respond with a casual in-character message
-- "[Be more sarcastic]" → adjust your tone going forward
-If an OOC message is specifically about another character (not you), you can ignore it entirely.
-
 JSON only, nothing else."""
 
 
