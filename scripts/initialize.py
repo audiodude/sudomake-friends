@@ -2280,8 +2280,12 @@ def step_user_profile(cp, paths):
     cp["user_context"] = profile
     profile_path.write_text(profile)
     cp["step"] = "select_friends"
+    # Clear cached candidates so friends are regenerated from new profile
+    cp.pop("candidates", None)
+    cp.pop("held_indices", None)
     save_checkpoint(cp)
     print("  Done.")
+    print("  Note: You should re-roll your friends to match the new profile.")
     return cp
 
 
