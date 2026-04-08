@@ -369,6 +369,16 @@ class FriendGroup:
         if not message.text:
             return
 
+        # /test or /debug — all bots check in
+        if message.text.strip() in ("/test", "/debug"):
+            for name, bot in self.bots.items():
+                await bot.bot.send_message(
+                    chat_id=bot.group_chat_id,
+                    text=f"Hi it's me, {name}",
+                )
+                await asyncio.sleep(1)
+            return
+
         sender_id = message.from_user.id
         sender_name = message.from_user.first_name or message.from_user.username
 
