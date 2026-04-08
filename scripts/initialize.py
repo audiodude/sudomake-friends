@@ -2774,11 +2774,33 @@ STEPS = {
 }
 
 
+def _offer_delete_docker_volume():
+    """Check for Docker volume with old data and offer to delete it."""
+    try:
+        r = subprocess.run(
+            ["docker", "volume", "ls", "--filter", "name=friend-group_friend-data",
+             "--format", "{{.Name}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and "friend-data" in r.stdout:
+            print("\n  Docker volume with old chat/memory data found.")
+            delete = input("  Delete it? (recommended for fresh start) [y/N]: ").strip().lower()
+            if delete == "y":
+                subprocess.run(
+                    ["docker", "volume", "rm", "friend-group_friend-data"],
+                    capture_output=True, timeout=10,
+                )
+                print("  Deleted.")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass  # Docker not installed or not responding
+
+
 def main():
     global CHECKPOINT_PATH
 
     # Handle --start-over
     if "--start-over" in sys.argv:
+        _offer_delete_docker_volume()
         if HOME_DIR.exists():
             shutil.rmtree(HOME_DIR)
         print("  Cleared all setup state. Starting fresh.\n")
@@ -2818,9 +2840,11 @@ def main():
         else:
             choice = input("  [a]djust, [s]tart over, or [d]eploy? [a/s/d]: ").strip().lower()
         if choice == "s":
+            _offer_delete_docker_volume()
             clear_checkpoint()
             cp = {"step": "start"}
         elif choice == "a":
+            _offer_delete_docker_volume()
             # Walk through all steps, each will offer to keep or redo
             cp["step"] = "start"
         elif choice == "r" and has_incomplete:
