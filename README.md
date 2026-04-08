@@ -75,15 +75,6 @@ When you send a message in the group:
 
 Bots also initiate conversations when the chat's been quiet, and catch up on messages where they were mentioned but unavailable.
 
-### Response tuning
-
-Not everyone should pile on every message. The system balances this:
-
-- **Human messages**: 70% gate (not everyone responds to you)
-- **Bot-to-bot**: 80% of human rate (they talk to each other almost as much)
-- **Mentions**: Near-guaranteed response when addressed by name
-- **Engagement momentum**: Bots in active conversation are slightly more likely to keep going, but it decays
-
 ## Data
 
 ```
