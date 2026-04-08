@@ -2475,30 +2475,31 @@ def generate_history(client, souls: dict[str, str], user_context: str) -> str:
     )
 
     prompt = f"""You are writing a shared history document for a group of friends in a
-Telegram group chat. This document explains how they all know each other.
+Telegram group chat.
 
-## One of the friends
+## The person at the center
 {user_context}
 
-## The other friends
+## Their friends
 {friend_summaries}
 
-Write a HISTORY.md that covers:
-- How each friend met the others (be specific — through what, when roughly, where)
-- Key shared memories or events that bonded the group (a trip, a rough patch someone
-  went through, a running joke, a project they collaborated on)
-- The vibe of the group — what makes THIS specific group dynamic work
+Write a HISTORY.md with one section PER FRIEND. Each section should cover:
+- How this friend met the central person (be specific — through what, when, where)
+- A specific shared memory between them ("remember when...")
+- What their friendship is like day-to-day
+
+End with a short paragraph about how the group chat came together.
 
 RULES:
-- Keep it grounded and realistic. No fantasy, no "we all met at a magical hackathon."
-- These are real-feeling friendships with real-feeling origins.
-- ALL friends are equal. Do not single anyone out as the "center" or organizer of the group.
-- Some friends might know each other better than others. Not everyone has to be equally close.
-- Include 2-3 specific shared memories the group references ("remember when...")
-- About 400-600 words total.
+- Keep it grounded and realistic.
+- Focus on each friend's relationship WITH THE CENTRAL PERSON. Don't invent
+  elaborate backstories for how the friends know each other — they mostly met
+  through the group chat.
+- About 300-500 words total.
 - Write in third person past tense, like a narrator setting the stage.
 - Use the friends' actual names, locations, and personalities from their SOULs.
 - NEVER use the words "real person", "user", "human", or "bot" — everyone is just a friend.
+- NEVER refer to anyone as "the central person" in the output — use their actual name.
 
 Write the HISTORY.md directly, no preamble:"""
 
