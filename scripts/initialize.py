@@ -2767,7 +2767,9 @@ def main():
         has_incomplete = cp.get("step") and cp["step"] not in ("start", "done", "deploy")
         if has_incomplete:
             print(f"  (In-progress setup at step: {cp['step']})")
-        choice = input("  [r]esume, [s]tart over, [d]eploy, or [a]dd friend? [r/s/d/a]: ").strip().lower()
+            choice = input("  [r]esume, [s]tart over, [d]eploy, or [a]dd friend? [r/s/d/a]: ").strip().lower()
+        else:
+            choice = input("  [s]tart over, [d]eploy, or [a]dd friend? [s/d/a]: ").strip().lower()
         if choice == "s":
             clear_checkpoint()
             cp = {"step": "start"}
@@ -2777,13 +2779,10 @@ def main():
                 cp["step"] = "user_profile"
             else:
                 cp["step"] = "select_friends"
-        elif choice == "d":
-            cp["step"] = "deploy"
+        elif choice == "r" and has_incomplete:
+            pass  # continue from current checkpoint step
         else:
-            # Resume — if no incomplete checkpoint, resume means deploy
-            if not has_incomplete:
-                cp["step"] = "deploy"
-            # else: continue from current checkpoint step
+            cp["step"] = "deploy"
 
     elif cp["step"] != "start":
         print(f"\n  In-progress setup at step: {cp['step']}")
