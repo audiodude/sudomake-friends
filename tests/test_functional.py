@@ -692,7 +692,7 @@ class TestStepHistory:
     def test_display_then_decline(self, history_paths):
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
         with patch("initialize.generate_history", return_value="# HISTORY\nSome history."):
-            with patch("builtins.input", side_effect=["d", "n"]):
+            with patch("builtins.input", side_effect=["d", "q"]):
                 result = lib.step_history(cp, history_paths)
 
         assert result["step"] == "deploy"

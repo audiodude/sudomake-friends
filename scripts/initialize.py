@@ -2601,14 +2601,14 @@ def step_history(cp, paths):
         print()
         print(history)
         print()
-        action = input("  [w]rite to file / [r]egenerate / [n]o thanks: ").strip().lower()
+        action = input("  [w]rite to file, [r]egenerate, or [q] to continue:").strip().lower()
         while action == "r":
             print("  Regenerating...")
             history = generate_history(client, souls, user_context)
             print()
             print(history)
             print()
-            action = input("  [w]rite to file / [r]egenerate / [n]o thanks: ").strip().lower()
+            action = input("  [w]rite to file, [r]egenerate, or [q] to continue:").strip().lower()
         if action != "w":
             cp["step"] = "deploy"
             save_checkpoint(cp)
