@@ -2786,11 +2786,19 @@ def _offer_delete_docker_volume():
             print("\n  Docker volume with old chat/memory data found.")
             delete = input("  Delete it? (recommended for fresh start) [y/N]: ").strip().lower()
             if delete == "y":
+                # Must stop container first or volume rm fails
                 subprocess.run(
-                    ["docker", "volume", "rm", "friend-group_friend-data"],
-                    capture_output=True, timeout=10,
+                    ["docker", "compose", "down"],
+                    capture_output=True, timeout=30,
                 )
-                print("  Deleted.")
+                r2 = subprocess.run(
+                    ["docker", "volume", "rm", "friend-group_friend-data"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if r2.returncode == 0:
+                    print("  Deleted.")
+                else:
+                    print(f"  Could not delete: {r2.stderr.strip()}")
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass  # Docker not installed or not responding
 
