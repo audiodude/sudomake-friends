@@ -80,6 +80,14 @@ def save_friend_memory(name: str, content: str):
     path.write_text(content)
 
 
+def load_history() -> str:
+    """Load the shared HISTORY.md from friends dir."""
+    path = FRIENDS_DIR / "HISTORY.md"
+    if path.exists():
+        return path.read_text()
+    return ""
+
+
 def get_friend_names() -> list[str]:
     """Return list of configured friend directory names."""
     names = []

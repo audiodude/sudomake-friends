@@ -2394,7 +2394,7 @@ def step_telegram_group(cp, paths):
         print(f"\n  Group chat ID found: {existing}")
         use = input("  Use this? [Y/n]: ").strip().lower()
         if use in ("", "y", "yes"):
-            cp["step"] = "deploy"
+            cp["step"] = "history"
             save_checkpoint(cp)
             return cp
 
@@ -2432,7 +2432,7 @@ def step_telegram_group(cp, paths):
             print(f"  Found group: '{chat_title}' (ID: {chat_id})")
             set_env_var(paths["env"], "TELEGRAM_GROUP_CHAT_ID", str(chat_id))
             print(f"  Saved to .env")
-            cp["step"] = "deploy"
+            cp["step"] = "history"
             save_checkpoint(cp)
             return cp
         else:
@@ -2448,7 +2448,7 @@ def step_telegram_group(cp, paths):
             manual = input("  Enter group chat ID manually (or 'q' to quit): ").strip()
             if manual and manual != "q":
                 set_env_var(paths["env"], "TELEGRAM_GROUP_CHAT_ID", manual)
-                cp["step"] = "deploy"
+                cp["step"] = "history"
                 save_checkpoint(cp)
                 return cp
             save_checkpoint(cp)
@@ -2460,12 +2460,118 @@ def step_telegram_group(cp, paths):
         manual = input("  Enter group chat ID manually (or 'q' to quit): ").strip()
         if manual and manual != "q":
             set_env_var(paths["env"], "TELEGRAM_GROUP_CHAT_ID", manual)
-            cp["step"] = "deploy"
+            cp["step"] = "history"
             save_checkpoint(cp)
             return cp
         save_checkpoint(cp)
         print("\n  Progress saved. Run again to resume.")
         sys.exit(0)
+
+
+def generate_history(client, souls: dict[str, str], user_context: str) -> str:
+    """Generate a shared HISTORY.md for how all the friends know each other."""
+    friend_summaries = "\n\n".join(
+        f"### {name}\n{soul[:1500]}" for name, soul in souls.items()
+    )
+
+    prompt = f"""You are writing a shared history document for a group of friends in a
+Telegram group chat. This document explains how they all know each other and the
+real person (Travis) who brought them together.
+
+## The real person
+{user_context}
+
+## The friends
+{friend_summaries}
+
+Write a HISTORY.md that covers:
+- How the real person met each friend (be specific — through what, when roughly, where)
+- How the friends know each other (some through the real person, some independently)
+- Key shared memories or events that bonded the group (a trip, a rough patch someone
+  went through, a running joke, a project they collaborated on)
+- The vibe of the group — what makes THIS specific group dynamic work
+
+RULES:
+- Keep it grounded and realistic. No fantasy, no "we all met at a magical hackathon."
+- These are real-feeling friendships with real-feeling origins.
+- Some friends might know each other better than others. Not everyone has to be equally close.
+- Include 2-3 specific shared memories the group references ("remember when...")
+- About 400-600 words total.
+- Write in third person past tense, like a narrator setting the stage.
+- Use the friends' actual names, locations, and personalities from their SOULs.
+
+Write the HISTORY.md directly, no preamble:"""
+
+    response = client.messages.create(
+        model=MODEL, max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+def step_history(cp, paths):
+    """Offer to generate shared history for the friend group."""
+    friends_dir = paths["friends"]
+    history_path = friends_dir / "HISTORY.md"
+
+    # Skip if already exists
+    if history_path.exists():
+        print(f"\n  HISTORY.md already exists.")
+        cp["step"] = "deploy"
+        save_checkpoint(cp)
+        return cp
+
+    print()
+    choice = input("  Generate a shared history for your friend group? [d]isplay / [w]rite / [n]o: ").strip().lower()
+
+    if choice == "n":
+        cp["step"] = "deploy"
+        save_checkpoint(cp)
+        return cp
+
+    # Load all souls
+    souls = {}
+    for d in sorted(friends_dir.iterdir()):
+        soul_path = d / "SOUL.md"
+        if d.is_dir() and not d.name.startswith(".") and soul_path.exists():
+            souls[d.name] = soul_path.read_text()
+
+    if not souls:
+        print("  No friends found. Skipping.")
+        cp["step"] = "deploy"
+        save_checkpoint(cp)
+        return cp
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=cp.get("anthropic_key") or os.environ.get("ANTHROPIC_API_KEY"))
+    user_context = cp.get("user_context", "")
+
+    print(f"  Generating shared history for {len(souls)} friends...")
+    history = generate_history(client, souls, user_context)
+
+    if choice == "d":
+        print()
+        print(history)
+        print()
+        action = input("  [w]rite to file / [r]egenerate / [n]o thanks: ").strip().lower()
+        while action == "r":
+            print("  Regenerating...")
+            history = generate_history(client, souls, user_context)
+            print()
+            print(history)
+            print()
+            action = input("  [w]rite to file / [r]egenerate / [n]o thanks: ").strip().lower()
+        if action != "w":
+            cp["step"] = "deploy"
+            save_checkpoint(cp)
+            return cp
+
+    history_path.write_text(history)
+    print(f"  Wrote HISTORY.md to {history_path}")
+
+    cp["step"] = "deploy"
+    save_checkpoint(cp)
+    return cp
 
 
 def step_deploy(cp, paths):
@@ -2614,6 +2720,7 @@ STEPS = {
     "select_friends": step_select_friends,
     "telegram_bots": step_telegram_bots,
     "telegram_group": step_telegram_group,
+    "history": step_history,
     "deploy": step_deploy,
     "done": step_done,
 }

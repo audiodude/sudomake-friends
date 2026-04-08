@@ -628,3 +628,81 @@ class TestTimezoneValidation:
         result = lib.text_to_candidate(text, candidate)
         # Bad timezone "Europe/Blerlin" should get fixed via location
         assert result["timezone"] == "Europe/Berlin"
+
+
+# ─── History generation ─────────────────────────────────────────────────────
+
+class TestStepHistory:
+    """Tests for the HISTORY.md generation step."""
+
+    @pytest.fixture
+    def friends_with_souls(self, tmp_path):
+        """Create a friends dir with SOUL.md files."""
+        friends_dir = tmp_path / "friends"
+        friends_dir.mkdir()
+        for name in ("alex", "river"):
+            d = friends_dir / name
+            d.mkdir()
+            (d / "SOUL.md").write_text(f"# {name}\nA cool person from somewhere.")
+        return friends_dir
+
+    @pytest.fixture
+    def history_paths(self, tmp_path, friends_with_souls):
+        return {
+            "root": tmp_path,
+            "friends": friends_with_souls,
+            "env": tmp_path / ".env",
+        }
+
+    def test_skip_if_no(self, history_paths):
+        cp = {"step": "history"}
+        with patch("builtins.input", return_value="n"):
+            result = lib.step_history(cp, history_paths)
+        assert result["step"] == "deploy"
+        assert not (history_paths["friends"] / "HISTORY.md").exists()
+
+    def test_skip_if_already_exists(self, history_paths):
+        (history_paths["friends"] / "HISTORY.md").write_text("existing history")
+        cp = {"step": "history"}
+        result = lib.step_history(cp, history_paths)
+        assert result["step"] == "deploy"
+        # Should not prompt at all
+        assert (history_paths["friends"] / "HISTORY.md").read_text() == "existing history"
+
+    def test_write_directly(self, history_paths):
+        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        with patch("initialize.generate_history", return_value="# HISTORY\nThey met at a park."):
+            with patch("builtins.input", return_value="w"):
+                result = lib.step_history(cp, history_paths)
+
+        assert result["step"] == "deploy"
+        history = (history_paths["friends"] / "HISTORY.md").read_text()
+        assert "They met at a park" in history
+
+    def test_display_then_write(self, history_paths, capsys):
+        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        with patch("initialize.generate_history", return_value="# HISTORY\nFriends since 2020."):
+            with patch("builtins.input", side_effect=["d", "w"]):
+                result = lib.step_history(cp, history_paths)
+
+        output = capsys.readouterr().out
+        assert "Friends since 2020" in output
+        assert (history_paths["friends"] / "HISTORY.md").exists()
+
+    def test_display_then_decline(self, history_paths):
+        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        with patch("initialize.generate_history", return_value="# HISTORY\nSome history."):
+            with patch("builtins.input", side_effect=["d", "n"]):
+                result = lib.step_history(cp, history_paths)
+
+        assert result["step"] == "deploy"
+        assert not (history_paths["friends"] / "HISTORY.md").exists()
+
+    def test_display_regenerate_then_write(self, history_paths):
+        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        with patch("initialize.generate_history", side_effect=["Version 1.", "Version 2."]):
+            with patch("builtins.input", side_effect=["d", "r", "w"]):
+                result = lib.step_history(cp, history_paths)
+
+        history = (history_paths["friends"] / "HISTORY.md").read_text()
+        assert "Version 2" in history

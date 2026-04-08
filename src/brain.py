@@ -7,7 +7,7 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
-from .config import load_friend_soul, load_friend_memory, save_friend_memory
+from .config import load_friend_soul, load_friend_memory, save_friend_memory, load_history
 from .chat_history import get_chat_context
 from .schedule import get_availability
 
@@ -20,6 +20,9 @@ IMPROV RULE: When someone attributes a fact, memory, or characteristic to you ("
 
 ## Who you are
 {soul}
+
+## How you all know each other
+{history}
 
 ## Things you remember
 {memory}
@@ -99,6 +102,7 @@ async def think_and_respond(
     """
     soul = load_friend_soul(friend_name)
     memory = load_friend_memory(friend_name)
+    history = load_history()
     chat_context = get_chat_context(limit=50)
     availability = get_availability(friend_config)
 
@@ -117,6 +121,7 @@ async def think_and_respond(
     prompt = DECIDE_AND_RESPOND_PROMPT.format(
         name=friend_name,
         soul=soul,
+        history=history if history else "(No shared history yet)",
         memory=memory if memory else "(No memories yet — this is a fresh start)",
         local_time=availability["local_time"],
         status_note=status_note,
@@ -177,6 +182,9 @@ INITIATE_PROMPT = """You are {name}. This is a group chat with your actual frien
 ## Who you are
 {soul}
 
+## How you all know each other
+{history}
+
 ## Things you remember
 {memory}
 
@@ -233,6 +241,7 @@ async def maybe_initiate(
     """
     soul = load_friend_soul(friend_name)
     memory = load_friend_memory(friend_name)
+    history = load_history()
     chat_context = get_chat_context(limit=30)
     availability = get_availability(friend_config)
 
@@ -257,6 +266,7 @@ async def maybe_initiate(
     prompt = INITIATE_PROMPT.format(
         name=friend_name,
         soul=soul,
+        history=history if history else "(No shared history yet)",
         memory=memory if memory else "(No memories yet)",
         local_time=availability["local_time"],
         status_note=status_note,
