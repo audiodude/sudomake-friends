@@ -1226,7 +1226,7 @@ def generate_soul(client, candidate: dict, all_friends: list[dict],
     traits_str = ", ".join(traits) if traits else "not specified"
 
     prompt = f"""Write a detailed SOUL.md personality file for a virtual chat bot character.
-This character will be in a group chat with a real person and other bot characters.
+This character will be in a group chat with friends.
 
 ## The character
 {json.dumps(candidate, indent=2)}
@@ -1240,7 +1240,7 @@ person. They have different childhoods, different relationships, different copin
 ## Other friends in the group
 {others_desc}
 
-## The real person they're friends with
+## Another friend in the group
 {user_context}
 
 CRITICAL INSTRUCTION: This is a WHOLE PERSON, not a walking job description. Their
@@ -1288,7 +1288,7 @@ What's charming about this person and what's annoying?)
 - What they do on a Friday night or lazy Sunday)
 
 ## Relationships
-(how they relate to the real person and each of the other friends — think about
+(how they relate to each of the other friends — think about
 personality chemistry, not just shared interests)
 
 ## Speech Patterns
@@ -2475,18 +2475,16 @@ def generate_history(client, souls: dict[str, str], user_context: str) -> str:
     )
 
     prompt = f"""You are writing a shared history document for a group of friends in a
-Telegram group chat. This document explains how they all know each other and the
-real person (Travis) who brought them together.
+Telegram group chat. This document explains how they all know each other.
 
-## The real person
+## One of the friends
 {user_context}
 
-## The friends
+## The other friends
 {friend_summaries}
 
 Write a HISTORY.md that covers:
-- How the real person met each friend (be specific — through what, when roughly, where)
-- How the friends know each other (some through the real person, some independently)
+- How each friend met the others (be specific — through what, when roughly, where)
 - Key shared memories or events that bonded the group (a trip, a rough patch someone
   went through, a running joke, a project they collaborated on)
 - The vibe of the group — what makes THIS specific group dynamic work
@@ -2494,11 +2492,13 @@ Write a HISTORY.md that covers:
 RULES:
 - Keep it grounded and realistic. No fantasy, no "we all met at a magical hackathon."
 - These are real-feeling friendships with real-feeling origins.
+- ALL friends are equal. Do not single anyone out as the "center" or organizer of the group.
 - Some friends might know each other better than others. Not everyone has to be equally close.
 - Include 2-3 specific shared memories the group references ("remember when...")
 - About 400-600 words total.
 - Write in third person past tense, like a narrator setting the stage.
 - Use the friends' actual names, locations, and personalities from their SOULs.
+- NEVER use the words "real person", "user", "human", or "bot" — everyone is just a friend.
 
 Write the HISTORY.md directly, no preamble:"""
 
