@@ -630,6 +630,71 @@ class TestTimezoneValidation:
         assert result["timezone"] == "Europe/Berlin"
 
 
+# ─── User profile step ──────────────────────────────────────────────────────
+
+class TestStepUserProfile:
+    """Tests for step_user_profile: caching, persistence, recompile flow."""
+
+    @pytest.fixture
+    def profile_paths(self, tmp_path):
+        env = tmp_path / ".env"
+        env.write_text("ANTHROPIC_API_KEY=sk-ant-test123\n")
+        return {"root": tmp_path, "friends": tmp_path / "friends", "env": env}
+
+    def test_reuses_profile_from_checkpoint(self, profile_paths):
+        cp = {"step": "user_profile", "user_context": "I am Travis."}
+        with patch("builtins.input", return_value="n"):
+            result = lib.step_user_profile(cp, profile_paths)
+        assert result["step"] == "select_friends"
+        assert result["user_context"] == "I am Travis."
+
+    def test_reuses_profile_from_file(self, profile_paths):
+        (profile_paths["root"] / "profile.txt").write_text("Saved profile.")
+        cp = {"step": "user_profile"}
+        with patch("builtins.input", return_value="n"):
+            result = lib.step_user_profile(cp, profile_paths)
+        assert result["step"] == "select_friends"
+        assert result["user_context"] == "Saved profile."
+
+    def test_recompile_saves_to_file(self, profile_paths):
+        (profile_paths["root"] / "profile.txt").write_text("Old profile.")
+        cp = {"step": "user_profile", "user_context": "Old profile."}
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="New profile.")]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("initialize.get_client", return_value=mock_client):
+            with patch("builtins.input", side_effect=["y", "new source", "q"]):
+                result = lib.step_user_profile(cp, profile_paths)
+        assert result["user_context"] == "New profile."
+        assert (profile_paths["root"] / "profile.txt").read_text() == "New profile."
+
+    def test_recompile_clears_candidates(self, profile_paths):
+        cp = {"step": "user_profile", "user_context": "Old.",
+              "candidates": [{"name": "Stale"}], "held_indices": [0]}
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="New profile.")]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("initialize.get_client", return_value=mock_client):
+            with patch("builtins.input", side_effect=["y", "new source", "q"]):
+                result = lib.step_user_profile(cp, profile_paths)
+        assert "candidates" not in result
+        assert "held_indices" not in result
+
+    def test_recompile_warns_about_reroll(self, profile_paths, capsys):
+        cp = {"step": "user_profile", "user_context": "Old."}
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="New profile.")]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("initialize.get_client", return_value=mock_client):
+            with patch("builtins.input", side_effect=["y", "new source", "q"]):
+                lib.step_user_profile(cp, profile_paths)
+        output = capsys.readouterr().out
+        assert "re-roll" in output
+
+
 # ─── History generation ─────────────────────────────────────────────────────
 
 class TestStepHistory:
