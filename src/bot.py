@@ -119,9 +119,9 @@ class FriendGroup:
                 return 0.0
             return 1.0 - (minutes - 1) / 7
 
-        spoke_boost = _decay(since_spoke) * 0.1        # recently talked = small boost
-        replied_boost = _decay(since_replied_to) * 0.15  # got a reply = moderate boost
-        streak_boost = min(streak * 0.05, 0.15)         # back-and-forth = builds slowly
+        spoke_boost = _decay(since_spoke) * 0.067       # recently talked = small boost
+        replied_boost = _decay(since_replied_to) * 0.10  # got a reply = moderate boost
+        streak_boost = min(streak * 0.033, 0.10)         # back-and-forth = builds slowly
 
         # Streak decays too
         if since_spoke > 5:
