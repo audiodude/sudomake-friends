@@ -800,8 +800,8 @@ class TestStepSelectFriendsExisting:
         assert cp.get("candidates") is not None
         assert len(cp["candidates"]) >= 2
 
-    def test_edit_fallback_without_candidate_json(self, tmp_path):
-        """Friends without candidate.json get a minimal fallback."""
+    def test_edit_bails_without_candidate_json(self, tmp_path, capsys):
+        """Friends without candidate.json skip edit and keep existing."""
         friends_dir = tmp_path / "friends"
         friends_dir.mkdir()
         env_path = tmp_path / ".env"
@@ -812,18 +812,11 @@ class TestStepSelectFriendsExisting:
         # No candidate.json
         paths = {"root": tmp_path, "friends": friends_dir, "env": env_path}
         cp = {"step": "select_friends", "user_context": "test"}
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='[]')]
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
-            with patch("initialize.curses.wrapper") as mock_wrapper:
-                mock_wrapper.return_value = ({0}, "accept")
-                with patch("initialize.generate_soul", return_value="# Soul"):
-                    with patch("builtins.input", return_value="e"):
-                        result = lib.step_select_friends(cp, paths)
-        assert cp["candidates"][0]["name"] == "Alex"
-        assert cp["candidates"][0]["vibe"] == "(edit to fill in)"
+        with patch("builtins.input", return_value="e"):
+            result = lib.step_select_friends(cp, paths)
+        assert result["step"] == "telegram_bots"
+        output = capsys.readouterr().out
+        assert "before edit support" in output
 
 
 # ─── sources.txt ────────────────────────────────────────────────────────────

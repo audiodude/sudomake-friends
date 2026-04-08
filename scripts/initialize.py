@@ -2304,13 +2304,12 @@ def step_select_friends(cp, paths):
                 if cpath.exists():
                     candidates.append(json.loads(cpath.read_text()))
                 else:
-                    # Minimal fallback for friends created before candidate.json
-                    candidates.append({
-                        "name": name.title(), "age": 30,
-                        "location": "Unknown", "occupation": "Unknown",
-                        "vibe": "(edit to fill in)", "why": "", "timezone": "UTC",
-                        "chattiness": 0.5,
-                    })
+                    print(f"  {name} was created before edit support — no candidate data.")
+                    print(f"  Start over to regenerate, or keep as-is.")
+                    cp["step"] = "telegram_bots"
+                    cp["selected"] = [{"name": n} for n in existing]
+                    save_checkpoint(cp)
+                    return cp
             held_indices = set(range(len(candidates)))
             # Pad to CANDIDATE_COUNT with new candidates
             n_new = CANDIDATE_COUNT - len(candidates)
