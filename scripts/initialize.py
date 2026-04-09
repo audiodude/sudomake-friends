@@ -2729,7 +2729,6 @@ def step_deploy(cp, paths):
 
     else:
         print(f"\n  Run locally with Docker later:")
-        print(f"    # Download and build")
         print(f"    curl -L {TARBALL_URL} | tar xz")
         print(f"    docker build -t sudomake-friends sudomake-friends-main/")
         print(f"    docker run -d --name sudomake-friends \\")
