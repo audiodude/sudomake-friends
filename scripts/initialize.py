@@ -2949,6 +2949,17 @@ def main():
 
     print(f"  Data directory: {root}")
 
+    # Step 0: run any pending migrations
+    try:
+        from scripts.migrations import runner as _mig_runner
+        migrations_dir = repo_root / "scripts" / "migrations"
+        if not _mig_runner.check_and_run_pending(root, migrations_dir):
+            print()
+            print("  Wizard halted due to pending mandatory migration.")
+            sys.exit(1)
+    except ImportError as e:
+        print(f"  (Migrations system unavailable: {e})")
+
     cp = load_checkpoint()
 
     # Detect completed setup: .env exists and friends exist
