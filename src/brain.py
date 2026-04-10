@@ -77,8 +77,15 @@ Respond with a JSON object (no markdown fencing):
   "reply_to_message_id": message_id or null,
   "memory_update": "brief note" or null,
   "topic": "2-4 word topic label" or null,
-  "delay_seconds": 1-30
+  "delay_seconds": 10-180
 }}
+
+For "delay_seconds": Real people don't reply instantly. They're doing other things — cooking, working, watching TV. Pick a realistic delay based on what {name} is doing right now and how urgent the message feels:
+- Quick reaction to something funny or addressed directly: 10-30 seconds
+- Normal reply when free: 30-90 seconds
+- At work or busy: 60-180 seconds (or longer)
+- A bot reply (less urgent): usually 30-120 seconds
+NEVER reply in under 10 seconds. That's chatbot behavior.
 
 "messages" is an ARRAY. Real people often split their thoughts across multiple texts:
   - "oh man" / "that reminds me" / "did you see the thing about..."
@@ -204,7 +211,7 @@ async def think_and_respond(
     return {
         "messages": messages,
         "reply_to_message_id": result.get("reply_to_message_id"),
-        "delay_seconds": max(1, min(30, result.get("delay_seconds", 3))),
+        "delay_seconds": max(10, min(180, result.get("delay_seconds", 30))),
     }
 
 
