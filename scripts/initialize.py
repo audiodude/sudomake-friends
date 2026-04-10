@@ -39,6 +39,80 @@ SCRAPE_TIMEOUT = 180
 REPO_URL = "https://github.com/audiodude/sudomake-friends.git"
 TARBALL_URL = "https://github.com/audiodude/sudomake-friends/archive/main.tar.gz"
 HOME_DIR = Path.home() / ".sudomake-friends"
+SRC_CACHE_DIR = HOME_DIR / ".src-cache"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bootstrap — ensure a working repo checkout and offer updates
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _find_local_repo_root() -> "Path | None":
+    """If this script is running from a checked-out repo, return its root. Else None."""
+    try:
+        script_path = Path(__file__).resolve()
+    except NameError:
+        return None
+    candidate = script_path.parent.parent
+    if (candidate / "scripts" / "migrations").exists() or (candidate / ".git").exists():
+        return candidate
+    return None
+
+
+def ensure_src_cache() -> "Path":
+    """Return a path to a working repo checkout.
+
+    Prefers a local dev checkout (if this script is running from one). Falls back
+    to cloning the repo to ~/.sudomake-friends/.src-cache/. Raises on failure.
+    """
+    local = _find_local_repo_root()
+    if local:
+        return local
+    SRC_CACHE_DIR.parent.mkdir(parents=True, exist_ok=True)
+    if not SRC_CACHE_DIR.exists():
+        print("  Fetching sudomake-friends source code...")
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth", "1", REPO_URL, str(SRC_CACHE_DIR)],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode("utf-8", errors="replace").strip()
+            print(f"  git clone failed: {stderr}")
+            raise
+    return SRC_CACHE_DIR
+
+
+def check_for_updates(repo_root: "Path") -> None:
+    """Step -1: offer to pull latest code. Warns about migrations."""
+    # Skip for dev checkouts — don't touch someone's working tree
+    if repo_root != SRC_CACHE_DIR:
+        return
+    print()
+    print("  Check for updates?")
+    print("  Pulls the latest code from GitHub. Updates may include new features,")
+    print("  bug fixes, or data migrations that modify your friends directory.")
+    print("  (Any migration will prompt before touching your data.)")
+    answer = input("  Check for updates now? [Y/n]: ").strip().lower()
+    if answer == "n":
+        return
+    print("  Pulling latest...")
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "pull", "--ff-only"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        out = (result.stdout or "").strip()
+        if "Already up to date" in out or "Already up-to-date" in out:
+            print("  Already up to date.")
+        else:
+            print(f"  Updated.\n{out}")
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        print(f"  git pull failed: {stderr}")
+        print("  Continuing with current code.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2861,6 +2935,12 @@ def main():
 
     # Ensure home directory exists
     HOME_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Step -1: bootstrap a working repo checkout and offer to pull updates
+    repo_root = ensure_src_cache()
+    check_for_updates(repo_root)
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
     root = HOME_DIR
     paths = get_paths(root)
