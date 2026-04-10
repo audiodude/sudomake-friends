@@ -63,6 +63,17 @@ You'll get options to **adjust** (walk through each step, keeping what you want)
 
 You can also edit any friend's personality directly at `~/.sudomake-friends/friends/<name>/SOUL.md`.
 
+## Updates and migrations
+
+Every time you re-run the wizard, two things happen before anything else:
+
+1. **Update check.** The wizard offers to pull the latest code from GitHub. You can decline. If you accept and the pull fails (e.g. you're hacking on a local checkout with uncommitted changes), it'll show the error and keep going with what you have.
+2. **Migrations.** If the new code includes data migrations that haven't been applied to your friends directory yet, the wizard lists them and asks before running. Each migration backs up `~/.sudomake-friends/friends/` to `~/.sudomake-friends/.backups/pre-<id>-<timestamp>/` before touching anything, so if something goes wrong you can restore. Backups are kept forever — delete `~/.sudomake-friends/` to uninstall.
+
+Migrations are normal Python files under `scripts/migrations/<timestamp>_<slug>/`, each with an `is_needed()` check and a `run()` function. Some are optional (you can skip them); some are mandatory (the wizard halts until they're applied). Applied migrations are recorded in `~/.sudomake-friends/.migrations-applied` so nothing runs twice.
+
+If you're running from the published URL, the wizard keeps a cached checkout at `~/.sudomake-friends/.src-cache/` and pulls updates into that. If you're running from a local dev checkout, it leaves your working tree alone.
+
 ## How it works
 
 When you send a message in the group:
