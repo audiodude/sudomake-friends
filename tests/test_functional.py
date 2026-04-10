@@ -143,6 +143,9 @@ class TestFriendDir:
 
         assert config["timezone"] == "America/New_York"
         assert config["chattiness"] == 0.5
+        # New wizard-written friends should always ship with the personality dials
+        assert "jokiness" in config
+        assert "whininess" in config
 
     def test_slug_is_lowercase_underscore(self, paths):
         c = {"name": "Mary Jane", "age": 30, "location": "NYC",
