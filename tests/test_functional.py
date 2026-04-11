@@ -10,11 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add scripts/ to path so we can import initialize as a module
+# Add scripts/ to path so we can import the wizard package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-import initialize as lib  # all functions live in the single file
-# Alias platform helpers
+import wizard as lib  # re-exports the public surface via wizard/__init__.py
 detect_platform = lib.detect_platform
 PLATFORMS = lib.PLATFORMS
 
@@ -196,10 +195,10 @@ def _make_mock_stdscr(keys: list[int], size=(40, 120)):
 @pytest.fixture()
 def mock_curses():
     """Mock curses functions that need a real terminal."""
-    with patch("initialize.curses.curs_set"), \
-         patch("initialize.curses.use_default_colors"), \
-         patch("initialize.curses.init_pair"), \
-         patch("initialize.curses.color_pair", return_value=0):
+    with patch("wizard.tui.curses.curs_set"), \
+         patch("wizard.tui.curses.use_default_colors"), \
+         patch("wizard.tui.curses.init_pair"), \
+         patch("wizard.tui.curses.color_pair", return_value=0):
         yield
 
 
@@ -330,7 +329,7 @@ class TestUserContext:
     """Tests 24-31: Context input routing."""
 
     def test_url_routes_to_fetch(self, paths):
-        with patch("initialize._fetch_url", return_value="fetched content") as mock:
+        with patch("wizard.scraper._fetch_url", return_value="fetched content") as mock:
             with patch("builtins.input", side_effect=["https://example.com", "q", "n"]):
                 result, sources = lib.get_user_context(paths)
         mock.assert_called_once()
@@ -422,7 +421,7 @@ class TestSelectionLoop:
     """Tests 32-35: run_selection_loop integration."""
 
     def test_returns_selected_on_accept(self, sample_candidates):
-        with patch("initialize.curses.wrapper") as mock_wrapper:
+        with patch("wizard.tui.curses.wrapper") as mock_wrapper:
             # Simulate: select first, accept
             mock_wrapper.return_value = ({0}, "accept")
             result = lib.run_selection_loop(
@@ -435,7 +434,7 @@ class TestSelectionLoop:
         assert result[0]["name"] == "Casey"
 
     def test_returns_none_on_quit(self, sample_candidates):
-        with patch("initialize.curses.wrapper") as mock_wrapper:
+        with patch("wizard.tui.curses.wrapper") as mock_wrapper:
             mock_wrapper.return_value = (set(), "quit")
             result = lib.run_selection_loop(
                 client=MagicMock(),
@@ -446,7 +445,7 @@ class TestSelectionLoop:
 
     def test_on_save_called(self, sample_candidates):
         saves = []
-        with patch("initialize.curses.wrapper") as mock_wrapper:
+        with patch("wizard.tui.curses.wrapper") as mock_wrapper:
             mock_wrapper.return_value = ({0}, "accept")
             lib.run_selection_loop(
                 client=MagicMock(),
@@ -666,7 +665,7 @@ class TestStepUserProfile:
         mock_response.content = [MagicMock(text="New profile.")]
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
+        with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("builtins.input", side_effect=["y", "new source", "q"]):
                 result = lib.step_user_profile(cp, profile_paths)
         assert result["user_context"] == "New profile."
@@ -679,7 +678,7 @@ class TestStepUserProfile:
         mock_response.content = [MagicMock(text="New profile.")]
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
+        with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("builtins.input", side_effect=["y", "new source", "q"]):
                 result = lib.step_user_profile(cp, profile_paths)
         assert "candidates" not in result
@@ -691,7 +690,7 @@ class TestStepUserProfile:
         mock_response.content = [MagicMock(text="New profile.")]
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
+        with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("builtins.input", side_effect=["y", "new source", "q"]):
                 lib.step_user_profile(cp, profile_paths)
         output = capsys.readouterr().out
@@ -739,7 +738,7 @@ class TestStepHistory:
 
     def test_write_directly(self, history_paths):
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
-        with patch("initialize.generate_history", return_value="# HISTORY\nThey met at a park."):
+        with patch("wizard.steps.generate_history", return_value="# HISTORY\nThey met at a park."):
             with patch("builtins.input", return_value="w"):
                 result = lib.step_history(cp, history_paths)
 
@@ -749,7 +748,7 @@ class TestStepHistory:
 
     def test_display_then_write(self, history_paths, capsys):
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
-        with patch("initialize.generate_history", return_value="# HISTORY\nFriends since 2020."):
+        with patch("wizard.steps.generate_history", return_value="# HISTORY\nFriends since 2020."):
             with patch("builtins.input", side_effect=["d", "w"]):
                 result = lib.step_history(cp, history_paths)
 
@@ -759,7 +758,7 @@ class TestStepHistory:
 
     def test_display_then_decline(self, history_paths):
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
-        with patch("initialize.generate_history", return_value="# HISTORY\nSome history."):
+        with patch("wizard.steps.generate_history", return_value="# HISTORY\nSome history."):
             with patch("builtins.input", side_effect=["d", "q"]):
                 result = lib.step_history(cp, history_paths)
 
@@ -768,7 +767,7 @@ class TestStepHistory:
 
     def test_display_regenerate_then_write(self, history_paths):
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
-        with patch("initialize.generate_history", side_effect=["Version 1.", "Version 2."]):
+        with patch("wizard.steps.generate_history", side_effect=["Version 1.", "Version 2."]):
             with patch("builtins.input", side_effect=["d", "r", "w"]):
                 result = lib.step_history(cp, history_paths)
 
@@ -839,10 +838,10 @@ class TestStepSelectFriendsExisting:
         mock_response.content = [MagicMock(text='[{"name":"New","age":25,"location":"SF","occupation":"Dev","vibe":"Fun","why":"Yes","timezone":"America/Los_Angeles","chattiness":0.5}]')]
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
-            with patch("initialize.curses.wrapper") as mock_wrapper:
+        with patch("wizard.steps.get_client", return_value=mock_client):
+            with patch("wizard.tui.curses.wrapper") as mock_wrapper:
                 mock_wrapper.return_value = ({0}, "accept")
-                with patch("initialize.generate_soul", return_value="# Soul"):
+                with patch("wizard.friends.generate_soul", return_value="# Soul"):
                     with patch("builtins.input", side_effect=["n"]):
                         result = lib.step_select_friends(cp, paths)
         assert result["step"] == "telegram_bots"
@@ -857,11 +856,11 @@ class TestStepSelectFriendsExisting:
         mock_response.content = [MagicMock(text=json.dumps([new_candidate]))]
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        with patch("initialize.get_client", return_value=mock_client):
-            with patch("initialize.curses.wrapper") as mock_wrapper:
+        with patch("wizard.steps.get_client", return_value=mock_client):
+            with patch("wizard.tui.curses.wrapper") as mock_wrapper:
                 # Accept all (2 existing held + new ones)
                 mock_wrapper.return_value = ({0, 1}, "accept")
-                with patch("initialize.generate_soul", return_value="# Soul"):
+                with patch("wizard.friends.generate_soul", return_value="# Soul"):
                     with patch("builtins.input", return_value="e"):
                         result = lib.step_select_friends(cp, paths)
         # Should have loaded candidates into checkpoint
@@ -906,7 +905,7 @@ class TestSourcesFile:
         monkeypatch.chdir(tmp_path)
         sources_file = tmp_path / "sources.txt"
         sources_file.write_text("https://example.com\n")
-        with patch("initialize._fetch_url", return_value="fetched stuff"):
+        with patch("wizard.scraper._fetch_url", return_value="fetched stuff"):
             with patch("builtins.input", side_effect=["y", "q", "n"]):
                 result, sources = lib.get_user_context(paths)
         assert "fetched stuff" in result
@@ -923,7 +922,7 @@ class TestSourcesFile:
     def test_offers_to_save_sources(self, paths, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)
         with patch("builtins.input", side_effect=["https://example.com", "q", "y"]):
-            with patch("initialize._fetch_url", return_value="stuff"):
+            with patch("wizard.scraper._fetch_url", return_value="stuff"):
                 result, sources = lib.get_user_context(paths)
         assert (tmp_path / "sources.txt").exists()
         assert "example.com" in (tmp_path / "sources.txt").read_text()
@@ -979,7 +978,7 @@ class TestMainMenu:
         assert (friends_dir / "HISTORY.md").read_text() == "old history"
         # Accept regeneration
         cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "test"}
-        with patch("initialize.generate_history", return_value="new history"):
+        with patch("wizard.steps.generate_history", return_value="new history"):
             with patch("builtins.input", side_effect=["y", "w"]):
                 result = lib.step_history(cp, paths)
         assert (friends_dir / "HISTORY.md").read_text() == "new history"

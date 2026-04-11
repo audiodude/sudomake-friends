@@ -10,7 +10,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from migrations import runner
+from wizard.migrations import runner
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────

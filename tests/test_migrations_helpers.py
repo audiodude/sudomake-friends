@@ -9,7 +9,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from migrations import helpers
+from wizard.migrations import helpers
 
 
 @pytest.fixture

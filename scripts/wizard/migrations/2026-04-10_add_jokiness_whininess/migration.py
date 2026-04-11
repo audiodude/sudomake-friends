@@ -12,13 +12,9 @@ Users get three strategies to pick values:
 
 import json
 import os
-import sys
 from pathlib import Path
 
-# Import shared helpers from the migrations package.
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent.parent))
-from migrations import helpers  # noqa: E402
+from wizard.migrations import helpers
 
 
 ID = "2026-04-10_add_jokiness_whininess"

@@ -9,14 +9,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-# Add scripts/ and scripts/migrations/ to the path
+# Add scripts/ to the path so `wizard.migrations` is importable
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "scripts"))
-sys.path.insert(0, str(_REPO / "scripts" / "migrations"))
 
 
 def _load_migration():
-    path = _REPO / "scripts" / "migrations" / "2026-04-10_add_jokiness_whininess" / "migration.py"
+    path = _REPO / "scripts" / "wizard" / "migrations" / "2026-04-10_add_jokiness_whininess" / "migration.py"
     spec = importlib.util.spec_from_file_location("jokiness_migration", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

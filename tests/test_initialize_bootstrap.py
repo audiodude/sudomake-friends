@@ -13,9 +13,9 @@ import initialize as lib
 
 
 class TestFindLocalRepoRoot:
-    def test_finds_repo_when_scripts_migrations_exists(self, tmp_path):
+    def test_finds_repo_when_scripts_wizard_exists(self, tmp_path):
         repo = tmp_path / "fake-repo"
-        (repo / "scripts" / "migrations").mkdir(parents=True)
+        (repo / "scripts" / "wizard").mkdir(parents=True)
         script = repo / "scripts" / "initialize.py"
         script.write_text("")
         with patch.object(lib, "__file__", str(script)):
@@ -42,7 +42,7 @@ class TestFindLocalRepoRoot:
 class TestEnsureSrcCache:
     def test_returns_local_repo_when_available(self, tmp_path):
         fake_local = tmp_path / "dev-checkout"
-        (fake_local / "scripts" / "migrations").mkdir(parents=True)
+        (fake_local / "scripts" / "wizard").mkdir(parents=True)
         with patch.object(lib, "_find_local_repo_root", return_value=fake_local):
             with patch("subprocess.run") as mock_run:
                 result = lib.ensure_src_cache()
