@@ -140,44 +140,54 @@ def _match_interest_feeds(soul_text: str) -> list[str]:
     return feeds
 
 
-def fetch_news_for_friend(name: str) -> str:
-    """Fetch and format news headlines for a specific friend."""
-    soul = load_friend_soul(name)
+def fetch_shared_news() -> str:
+    """Fetch the combined news pool all friends share.
 
-    # Fetch general headlines
+    Structure: 4 general headlines + one headline from each friend's interest
+    feeds. Everyone sees the same pool, so breaking news reaches every bot at
+    once and they can't contradict each other about recent events.
+    """
+    import random
+
+    # 4 general headlines (deduped across the general feeds)
     general_items = []
     for feed_url in GENERAL_FEEDS:
         general_items.extend(_fetch_feed(feed_url, max_items=8))
 
-    # Deduplicate by title, keep first 5
-    seen = set()
+    seen: set[str] = set()
     general = []
     for item in general_items:
         if item["title"] not in seen:
             seen.add(item["title"])
             general.append(item)
-        if len(general) >= 5:
+        if len(general) >= 4:
             break
 
-    # Fetch interest-specific headlines — cap per feed so one source doesn't dominate
-    import random
-    interest_feeds = _match_interest_feeds(soul)
-    interest_items = []
-    for feed_url in interest_feeds:
-        items = _fetch_feed(feed_url, max_items=5)
-        random.shuffle(items)
-        interest_items.extend(items[:3])  # max 3 per feed
-    random.shuffle(interest_items)
-
+    # One interest headline per friend
     specific = []
-    for item in interest_items:
-        if item["title"] not in seen:
-            seen.add(item["title"])
-            specific.append(item)
-        if len(specific) >= 5:
-            break
+    for name in get_friend_names():
+        try:
+            soul = load_friend_soul(name)
+        except Exception:
+            continue
+        interest_feeds = _match_interest_feeds(soul)
+        if not interest_feeds:
+            continue
+        random.shuffle(interest_feeds)
+        picked = None
+        for feed_url in interest_feeds:
+            items = _fetch_feed(feed_url, max_items=8)
+            random.shuffle(items)
+            for item in items:
+                if item["title"] not in seen:
+                    seen.add(item["title"])
+                    picked = item
+                    break
+            if picked:
+                break
+        if picked:
+            specific.append(picked)
 
-    # Format as readable text
     lines = []
     if general:
         lines.append("### What's happening today")
@@ -196,18 +206,24 @@ def fetch_news_for_friend(name: str) -> str:
 
 
 def refresh_all_news():
-    """Fetch fresh news for all friends and write their NEWS.md files."""
+    """Fetch fresh news once and write the same content to every friend's NEWS.md."""
     NEWS_DIR.mkdir(parents=True, exist_ok=True)
     names = get_friend_names()
 
+    try:
+        content = fetch_shared_news()
+    except Exception as e:
+        logger.exception(f"Failed to fetch shared news: {e}")
+        return
+
     for name in names:
         try:
-            content = fetch_news_for_friend(name)
             news_path = NEWS_DIR / f"{name}.md"
             news_path.write_text(content)
-            logger.info(f"Refreshed news for {name} ({len(content)} chars)")
         except Exception as e:
-            logger.exception(f"Failed to refresh news for {name}: {e}")
+            logger.exception(f"Failed to write news for {name}: {e}")
+
+    logger.info(f"Refreshed shared news for {len(names)} friends ({len(content)} chars)")
 
 
 def load_friend_news(name: str) -> str:

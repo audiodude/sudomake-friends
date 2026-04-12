@@ -1,7 +1,11 @@
 services:
   sudomake-friends:
     container_name: sudomake-friends
-    build: .
+    build:
+      context: .
+      args:
+        APP_UID: ${DOCKER_UID:-1000}
+        APP_GID: ${DOCKER_GID:-1000}
     env_file:
       - .env
       - ~/.sudomake-friends/.env
@@ -9,8 +13,5 @@ services:
       - DATA_DIR=/app/data
     restart: unless-stopped
     volumes:
-      - friend-data:/app/data
+      - ~/.sudomake-friends/data:/app/data
       - ~/.sudomake-friends/friends:/app/friends:ro
-
-volumes:
-  friend-data:

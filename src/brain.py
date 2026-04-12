@@ -1,5 +1,6 @@
 """The LLM-powered brain for each friend bot."""
 
+import base64
 import json
 import logging
 
@@ -67,6 +68,8 @@ Local time: {local_time}
 
 ## Stuff you've seen today
 {news}
+
+IMPORTANT about world facts: Your memory of world events is frozen at some point in the past and is NOT current. The "Stuff you've seen today" section above is the ONLY reliable source for recent news — if it mentions that someone died, a company did something, an election happened, etc., TRUST IT. Do not contradict it based on what you "remember" or think you know. If a friend brings up a recent event and you're not sure, either check the news section, go with what they're saying, or just say you hadn't heard about it. NEVER confidently insist that a recent event didn't happen — you are probably out of date. Real people say "oh shit really?" or "wait what, I hadn't heard" when surprised by news, they don't argue with sources.
 
 ## Topics already discussed recently
 {recent_topics}
@@ -176,6 +179,8 @@ async def think_and_respond(
     message: str,
     message_id: int,
     friend_config: dict,
+    image_bytes: bytes | None = None,
+    image_media_type: str | None = None,
 ) -> dict | None:
     """Have a friend think about a message and optionally respond.
 
@@ -221,10 +226,25 @@ async def think_and_respond(
         message=message,
     )
 
+    if image_bytes and image_media_type:
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image_media_type,
+                    "data": base64.standard_b64encode(image_bytes).decode("ascii"),
+                },
+            },
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        content = prompt
+
     response = await client.messages.create(
         model=model,
         max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": content}],
     )
 
     raw = response.content[0].text.strip()
@@ -296,6 +316,8 @@ Local time: {local_time}
 
 ## Stuff you've seen today
 {news}
+
+IMPORTANT about world facts: Your memory of world events is frozen at some point in the past and is NOT current. The "Stuff you've seen today" section above is the ONLY reliable source for recent news — if it mentions that someone died, a company did something, an election happened, etc., TRUST IT. Do not contradict it based on what you "remember" or think you know. If a friend brings up a recent event and you're not sure, either check the news section, go with what they're saying, or just say you hadn't heard about it. NEVER confidently insist that a recent event didn't happen — you are probably out of date. Real people say "oh shit really?" or "wait what, I hadn't heard" when surprised by news, they don't argue with sources.
 
 ## Topics already discussed recently
 {recent_topics}

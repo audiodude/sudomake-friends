@@ -455,17 +455,41 @@ class FriendGroup:
 
     async def _handle_message(self, message):
         """Process an incoming message and let friends respond."""
-        if not message.text:
-            return
-
         # /test or /debug — all bots check in
-        if message.text.strip() in ("/test", "/debug"):
+        if message.text and message.text.strip() in ("/test", "/debug"):
             for name, bot in self.bots.items():
                 await bot.bot.send_message(
                     chat_id=bot.group_chat_id,
                     text=f"Hi it's me, {name}",
                 )
                 await asyncio.sleep(1)
+            return
+
+        # Download photo if present (largest size)
+        image_bytes: bytes | None = None
+        image_media_type: str | None = None
+        if message.photo:
+            try:
+                largest = message.photo[-1]
+                poll_bot = next(iter(self.bots.values()))
+                tg_file = await poll_bot.bot.get_file(largest.file_id)
+                data = await tg_file.download_as_bytearray()
+                image_bytes = bytes(data)
+                # Telegram photos are always served as JPEG
+                image_media_type = "image/jpeg"
+                logger.info(f"Downloaded photo ({len(image_bytes)} bytes) from message")
+            except Exception as e:
+                logger.exception(f"Failed to download photo: {e}")
+                image_bytes = None
+
+        # Build the text representation of this message
+        caption = message.caption or message.text or ""
+        if message.photo:
+            display_text = f"(photo) {caption}".strip()
+        else:
+            display_text = caption
+
+        if not display_text:
             return
 
         sender_id = message.from_user.id
@@ -483,7 +507,7 @@ class FriendGroup:
         chat_msg = ChatMessage(
             timestamp=time.time(),
             sender=sender_name,
-            text=message.text,
+            text=display_text,
             message_id=message.message_id,
             reply_to=message.reply_to_message.message_id if message.reply_to_message else 0,
         )
@@ -512,7 +536,7 @@ class FriendGroup:
                 continue
 
             friend_config = load_friend_config(name)
-            by_name, by_at = self._is_mentioned(name, bot, message.text)
+            by_name, by_at = self._is_mentioned(name, bot, display_text)
             mentioned = by_name or by_at
 
             engagement = self._get_engagement_modifier(name)
@@ -523,7 +547,7 @@ class FriendGroup:
                     self._pending_mentions.append(PendingMention(
                         friend_name=name,
                         sender=sender_name,
-                        text=message.text,
+                        text=display_text,
                         message_id=message.message_id,
                         timestamp=time.time(),
                         was_at_mention=by_at,
@@ -539,7 +563,8 @@ class FriendGroup:
         if responders:
             task = asyncio.create_task(
                 self._staggered_responses(
-                    responders, sender_name, message.text, message.message_id
+                    responders, sender_name, display_text, message.message_id,
+                    image_bytes=image_bytes, image_media_type=image_media_type,
                 )
             )
             for name, _, _ in responders:
@@ -553,7 +578,9 @@ class FriendGroup:
             compact_to=chat_config.get("compact_to", 30),
         )
 
-    async def _staggered_responses(self, responders, sender, message, message_id):
+    async def _staggered_responses(self, responders, sender, message, message_id,
+                                    image_bytes: bytes | None = None,
+                                    image_media_type: str | None = None):
         """All bots think concurrently, but send one at a time with staggered delays.
 
         After each bot sends, remaining bots get a fresh LLM call to reconsider
@@ -572,6 +599,8 @@ class FriendGroup:
                         message=message,
                         message_id=message_id,
                         friend_config=friend_config,
+                        image_bytes=image_bytes,
+                        image_media_type=image_media_type,
                     )
                 )
 
@@ -604,6 +633,8 @@ class FriendGroup:
                             message=message,
                             message_id=message_id,
                             friend_config=friend_config,
+                            image_bytes=image_bytes,
+                            image_media_type=image_media_type,
                         )
                     except Exception as e:
                         logger.exception(f"Error in {name}'s reconsideration: {e}")
