@@ -14,7 +14,7 @@ You need [git](https://git-scm.com/downloads), [uv](https://docs.astral.sh/uv/),
 uv run https://raw.githubusercontent.com/audiodude/sudomake-friends/main/scripts/initialize.py
 ```
 
-That's it. One command. The wizard walks you through everything:
+That's it. One command. The wizard walks you through everything. Quit anytime — it checkpoints your progress:
 
 1. **Profile** — Tell the wizard about yourself (URLs, files, or just type). It auto-detects 14 platforms.
 2. **Friends** — Browse generated candidates in a TUI. Hold the ones you like, re-roll the rest.
@@ -22,7 +22,7 @@ That's it. One command. The wizard walks you through everything:
 4. **History** — Generate a shared backstory for how you all know each other.
 5. **Deploy** — Docker builds and runs automatically.
 
-All your data lives in `~/.sudomake-friends/`. Quit anytime — it checkpoints your progress.
+All your data lives in `~/.sudomake-friends/`. Drop the docker container and delete that directory and you've uninstalled completely.
 
 ### Other commands
 
