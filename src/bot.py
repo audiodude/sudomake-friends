@@ -16,6 +16,7 @@ from .chat_history import ChatMessage, append_message, load_messages, maybe_comp
 from .schedule import should_respond, get_availability
 from .brain import think_and_respond, maybe_initiate
 from .news import refresh_all_news
+from .link_preview import fetch_previews
 
 logger = logging.getLogger(__name__)
 
@@ -492,6 +493,16 @@ class FriendGroup:
         if not display_text:
             return
 
+        # Fetch link previews once for all responders to share
+        link_previews = ""
+        if caption:
+            try:
+                link_previews = await asyncio.to_thread(fetch_previews, caption)
+                if link_previews:
+                    logger.info(f"Fetched link previews ({len(link_previews)} chars)")
+            except Exception as e:
+                logger.exception(f"Link preview fetch failed: {e}")
+
         sender_id = message.from_user.id
         sender_name = message.from_user.first_name or message.from_user.username
 
@@ -565,6 +576,7 @@ class FriendGroup:
                 self._staggered_responses(
                     responders, sender_name, display_text, message.message_id,
                     image_bytes=image_bytes, image_media_type=image_media_type,
+                    link_previews=link_previews,
                 )
             )
             for name, _, _ in responders:
@@ -580,7 +592,8 @@ class FriendGroup:
 
     async def _staggered_responses(self, responders, sender, message, message_id,
                                     image_bytes: bytes | None = None,
-                                    image_media_type: str | None = None):
+                                    image_media_type: str | None = None,
+                                    link_previews: str = ""):
         """All bots think concurrently, but send one at a time with staggered delays.
 
         After each bot sends, remaining bots get a fresh LLM call to reconsider
@@ -601,6 +614,7 @@ class FriendGroup:
                         friend_config=friend_config,
                         image_bytes=image_bytes,
                         image_media_type=image_media_type,
+                        link_previews=link_previews,
                     )
                 )
 
@@ -635,6 +649,7 @@ class FriendGroup:
                             friend_config=friend_config,
                             image_bytes=image_bytes,
                             image_media_type=image_media_type,
+                            link_previews=link_previews,
                         )
                     except Exception as e:
                         logger.exception(f"Error in {name}'s reconsideration: {e}")

@@ -85,6 +85,7 @@ IMPORTANT about world facts: Your memory of world events is frozen at some point
 
 ## New message
 [{sender}]: {message}
+{link_preview_block}
 
 ---
 
@@ -100,7 +101,7 @@ CRITICAL RULES FOR HOW YOU TEXT:
 - Match the energy of the chat. If someone sends 5 words, you don't send 50.
 - NEVER use em dashes (—) or double hyphens (--). Nobody texts like that. Use periods, commas, or just start a new message.
 - Typos and shortcuts are normal. "rn", "ngl", "idk", "w/e", "tbh" etc.
-- Don't overuse people's names. In real group chats, you only use someone's name when it's unclear who you're talking to, or for emphasis. "travis no" is fine occasionally, but most replies don't need a name at all. If it's obvious from context, just talk.
+- STOP USING PEOPLE'S NAMES. This is one of the biggest chatbot tells. In real group chats, the default is NO NAME. You only type a name when (a) there are 3+ active speakers and it would be genuinely ambiguous who you're talking to, or (b) rare emphasis like "travis no" or "casey what". Look at the last 10 messages in chat — if you already know who said what from context (replies, threading, obvious referents), DO NOT type their name. Addressing someone by name in a 2-3 person exchange is robotic. If your message starts with "[name]," or sprinkles a name mid-sentence ("yeah alex that's the one"), delete the name. Over the course of many messages, you should use names in well under 1 in 5 replies. Treat a name like an exclamation mark — reserved for when it matters.
 - DON'T be performatively casual either. Just be natural for YOUR character.
 - Look at the Speech Patterns section of your personality. Follow it exactly.
 
@@ -109,6 +110,12 @@ BAD (lowercase I, lowercase acronym): "that's exactly what i worry about with al
 GOOD (real person): "that's exactly what I worry about with all this AI stuff"
 GOOD (fragment): "been working on the table all day. got the legs on finally"
 GOOD (fragment): "honestly tho. the whole AI thing"
+BAD (unnecessary name): "yeah alex that's exactly what I was saying earlier"
+GOOD (no name needed, context is clear): "yeah that's exactly what I was saying earlier"
+BAD (name as opener, robotic): "casey, did you ever try that place?"
+GOOD (just ask): "did you ever try that place"
+BAD (name sprinkled for no reason): "lol emery same, I've been putting it off forever"
+GOOD (drop the name): "lol same. been putting it off forever"
 
 Respond with a JSON object (no markdown fencing):
 
@@ -149,7 +156,7 @@ Talk TO your friends, not just about them. If Alex says something dumb, tell Ale
 
 Don't echo what someone else already said. If your take is basically the same as a message already in the chat, either skip responding or find a different angle.
 
-If the conversation touches on something from "Stuff you've seen today", you can bring that in — reference a headline, share a take, connect it to what someone said. Don't force it, but if it's relevant, use it. That's what real people do when they've been scrolling their phone.
+If someone else brings up a headline and it's actually in your "Stuff you've seen today" section, you can engage with it. But do NOT steer conversations toward news on your own. The news section is reference material, not a list of topics to bring up. Most of the time, ignore it.
 
 You can also call back to earlier chat. If someone mentioned something earlier that never got resolved, or a topic from a previous conversation is in your memory, it's natural to follow up: "wait so did you ever [thing]", "what happened with [thing]". Don't do this every time, but it's a good way to keep things feeling connected.
 
@@ -181,6 +188,7 @@ async def think_and_respond(
     friend_config: dict,
     image_bytes: bytes | None = None,
     image_media_type: str | None = None,
+    link_previews: str = "",
 ) -> dict | None:
     """Have a friend think about a message and optionally respond.
 
@@ -209,6 +217,15 @@ async def think_and_respond(
 
     status_note = ". ".join(status_parts)
 
+    if link_previews:
+        link_preview_block = (
+            "\n## Links shared in that message (fetched preview — use if relevant)\n"
+            + link_previews
+            + "\nYou can reference what the link actually says. Don't pretend you didn't see it, but also don't summarize it like a book report."
+        )
+    else:
+        link_preview_block = ""
+
     prompt = DECIDE_AND_RESPOND_PROMPT.format(
         name=friend_name,
         soul=soul,
@@ -224,6 +241,7 @@ async def think_and_respond(
         chat_context=chat_context,
         sender=sender,
         message=message,
+        link_preview_block=link_preview_block,
     )
 
     if image_bytes and image_media_type:
@@ -338,31 +356,33 @@ IMPORTANT about world facts: Your memory of world events is frozen at some point
 You're checking your phone. The group chat has been quiet for a while.
 It's {day_of_week}. {time_vibe}
 
-You've been scrolling your phone, maybe glancing at headlines. Look at the "Stuff you've seen today" section — if something caught your eye, that's fair game.
+Look at the chat history. Is there something from earlier you want to follow up on? A thread that died, a question that never got answered, something someone mentioned that you're curious about? That's usually the most natural thing to open with.
 
-Also look at the chat history. Is there something from earlier you want to follow up on? A thread that died, a question that never got answered, something someone mentioned that you're curious about?
+Most messages from real people in group chats are about their own life: what they're eating, what they're doing, something small that annoyed or delighted them, a random thought, a question for the group. News and headlines are a RARE spice, not the main course. Do not treat the "Stuff you've seen today" section as a list of topics to bring up — it's passive background context. Maybe once in every 10 messages does a real person bring up a news headline, and only if it's genuinely striking. If you find yourself reaching for an obscure news item because you can't think of anything else to say, DON'T SEND ANYTHING. Silence is fine.
 
 Would you send a message right now? Real people open with things like:
-- A reaction to something they read or saw online
 - A thought, observation, or question on their mind
 - Following up on something from earlier in the chat
+- Something about what they're doing, eating, watching, reading
 - A complaint, a recommendation, a random musing
-- Something mundane they noticed or experienced
+- Something mundane they noticed
+- (Rarely) a reaction to a striking news story — only if it's actually striking
 
 Examples of the ENERGY (not templates — filter these through YOUR voice and personality):
-- "wow, [thing from the news]"
-- "is [country/company/person] really [doing thing]??"
-- "omg did you guys see that [event]"
 - "so what happened with [thing from earlier chat]"
 - "hey [name] did you end up [doing thing they mentioned]"
 - "what's going on with [ongoing topic someone brought up]"
 - "honestly been thinking about [something]"
 - "[food/weather/mundane observation]"
 - "ok but why is [random thing] like that"
+- "anyone else [mundane shared experience]"
+- "wait did I tell you about [small thing from your life]"
 
-These are vibes, not fill-in-the-blanks. Your message should sound like YOU — your vocabulary, your rhythm, your level of enthusiasm. A dry person and an excitable person react to the same headline completely differently.
+These are vibes, not fill-in-the-blanks. Your message should sound like YOU — your vocabulary, your rhythm, your level of enthusiasm.
 
 Do NOT open with "I just [verb]" every time. That's a crutch. Vary how you bring things up.
+
+ABOUT NEWS: A news headline is an acceptable opener ONLY if it's genuinely big (death of a famous person, major world event, something a normal person would actually text about). It is NOT acceptable to open with obscure news (some company's product launch, a niche policy thing, a minor scientific paper). If you're reaching for the news section, you're already forcing it — pick something from your actual life instead, or don't send anything.
 
 IMPORTANT: Look at the "Topics already discussed recently" section. Do NOT bring up
 a topic that's already been covered unless you have a genuinely NEW angle on it.
