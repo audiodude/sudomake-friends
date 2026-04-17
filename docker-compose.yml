@@ -1,3 +1,5 @@
+name: sudomake-friends
+
 services:
   sudomake-friends:
     container_name: sudomake-friends
