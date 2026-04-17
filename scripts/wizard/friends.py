@@ -92,7 +92,6 @@ def create_friend_dir(friends_dir: Path, name: str, soul: str,
     friend_dir.mkdir(parents=True, exist_ok=True)
 
     (friend_dir / "SOUL.md").write_text(soul)
-    (friend_dir / "MEMORY.md").write_text("# Memory\n")
 
     config = {
         "timezone": _validate_timezone(

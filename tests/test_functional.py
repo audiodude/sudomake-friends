@@ -131,7 +131,6 @@ class TestFriendDir:
         friend_dir = paths["friends"] / slug
 
         assert (friend_dir / "SOUL.md").exists()
-        assert (friend_dir / "MEMORY.md").exists()
         assert (friend_dir / "config.yaml").exists()
 
     def test_config_has_correct_values(self, paths, sample_candidates):
@@ -795,7 +794,6 @@ class TestCreateFriendDir:
         d = paths["friends"] / slug
         assert (d / "SOUL.md").read_text() == "# My Soul"
         assert (d / "config.yaml").exists()
-        assert (d / "MEMORY.md").exists()
 
 
 # ─── step_select_friends keep/edit ──────────────────────────────────────────

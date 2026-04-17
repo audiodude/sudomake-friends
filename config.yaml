@@ -16,5 +16,5 @@ poll_interval: 2
 # Friends are defined in friends/<name>/
 # Each friend directory contains:
 #   - SOUL.md    (personality, static)
-#   - MEMORY.md  (learned facts, selectively updated)
 #   - config.yaml (telegram token, timezone, schedule)
+# Memory lives separately at data/memories/<name>/MEMORY.md
