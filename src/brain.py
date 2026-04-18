@@ -8,7 +8,7 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
-from .config import load_friend_soul, load_friend_memory, save_friend_memory, load_history
+from .config import load_friend_soul, load_friend_memory, save_friend_memory, load_history, get_friend_names
 from .chat_history import get_chat_context
 from .schedule import get_availability
 from .topics import (
@@ -20,6 +20,7 @@ from .topics import (
     record_complaint,
 )
 from .news import load_friend_news
+from .memory_validator import validate_memory
 
 
 def _describe_dials(friend_config: dict) -> str:
@@ -48,7 +49,9 @@ DECIDE_AND_RESPOND_PROMPT = """You are {name}. This is a group chat with your ac
 
 You're a character in an ongoing collaborative story. Stay in character at all times. Commit fully — you ARE {name}, with {name}'s history, opinions, and way of talking.
 
-IMPROV RULE: When someone attributes a fact, memory, or characteristic to you ("remember when we went to that concert?" / "you're the one who's obsessed with sourdough"), go with it. Don't deny it, don't say "I don't remember that." Accept it, build on it, add details. Save it to memory. You can react naturally — groan about it, laugh it off, be sheepish — but never break the fiction.
+IMPROV RULE: When someone attributes a fact, memory, or characteristic to you BY NAME or in unambiguous direct address ("remember when we went to that concert?" / "casey you're the one who's obsessed with sourdough"), go with it. Don't deny it, don't say "I don't remember that." Accept it, build on it, add details. Save it to memory. You can react naturally — groan about it, laugh it off, be sheepish — but never break the fiction.
+
+This rule only applies when YOU are the one being addressed. If you're watching a friend accept an attribution aimed at them, that's their scene — don't graft it onto yourself.
 
 ## Who you are
 {soul}
@@ -173,7 +176,13 @@ Real friends read the room. If the vibe says "move on," move on. You can bring s
 
 NEVER reply to yourself or reference your own previous messages. You are {name} — don't mention {name} in the third person, don't quote yourself, don't reply to messages you sent.
 
+STAY IN YOUR OWN LANE. Never claim ownership of another friend's specific object, pet, project, or hobby. "Same" responses are fine about feelings or vibes, NEVER about specific possessions — if someone else has a synth collection, you don't; if someone else has a greyhound, you don't.
+
+Watch especially for structural mimicry with role-swap: a friend says something about their thing, and you echo the structure with a duplicate thing attributed to you. Real example that happened here: river (who owns a vintage Juno synth) said "gonna try to actually touch the keys instead of just staring at them." Casey (who does pottery, not music) replied "gonna stop staring at the juno and actually turn it on." Casey doesn't have a juno — that was appropriation. The right move was either to react without claiming ("same tho, pottery wheel does this to me") or skip the reply entirely.
+
 For "memory_update": Save important facts — plans, commitments, personal info, emotional moments. ESPECIALLY save anything someone attributes to you ("remember when you..." / "you're the one who...") — these become part of your story. NOT routine small talk.
+
+CRITICAL: Memory is FIRST-PERSON and about {name} SPECIFICALLY. Only save things that are about YOU — your plans, your opinions, things YOU did or said, things OTHERS have attributed to YOU. Do NOT save things another friend said or did as if they were yours. If casey mentioned their cat, that does NOT go in your memory. If alex complained about work, that does NOT go in your memory. Your memory file is read back to you tomorrow as "things you remember about yourself" — if it contains someone else's life, you'll start thinking you lived it. Write memories with clear subjects: "I want to try that Thai place" not "discussed Thai food." "alex is sick this week" (a fact about alex) is fine; "got sick this week" (ambiguous — was it you?) is NOT. When in doubt, use "memory_update": null.
 
 JSON only, nothing else."""
 
@@ -287,8 +296,16 @@ async def think_and_respond(
 
     # Handle memory update
     if result.get("memory_update"):
-        logger.info(f"[{friend_name}] Saving memory: {result['memory_update'][:80]}")
-        _update_memory(friend_name, memory, result["memory_update"])
+        proposed = result["memory_update"]
+        other_names = [n for n in get_friend_names() if n != friend_name]
+        valid, reason = await validate_memory(
+            client, friend_name, soul, proposed, other_names=other_names
+        )
+        if valid:
+            logger.info(f"[{friend_name}] Saving memory: {proposed[:80]}")
+            _update_memory(friend_name, memory, proposed)
+        else:
+            logger.warning(f"[{friend_name}] Rejected memory: {proposed[:80]} — {reason}")
 
     # Handle topic tracking
     if result.get("topic"):
@@ -515,8 +532,16 @@ async def maybe_initiate(
         return None
 
     if result.get("memory_update"):
-        logger.info(f"[{friend_name}] Saving memory (initiate): {result['memory_update'][:80]}")
-        _update_memory(friend_name, memory, result["memory_update"])
+        proposed = result["memory_update"]
+        other_names = [n for n in get_friend_names() if n != friend_name]
+        valid, reason = await validate_memory(
+            client, friend_name, soul, proposed, other_names=other_names
+        )
+        if valid:
+            logger.info(f"[{friend_name}] Saving memory (initiate): {proposed[:80]}")
+            _update_memory(friend_name, memory, proposed)
+        else:
+            logger.warning(f"[{friend_name}] Rejected memory (initiate): {proposed[:80]} — {reason}")
 
     if result.get("topic"):
         record_topic(friend_name, result["topic"])
