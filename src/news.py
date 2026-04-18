@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -234,3 +235,18 @@ def load_friend_news(name: str) -> str:
         if content:
             return content
     return ""
+
+
+def news_age_seconds() -> float | None:
+    """Age of the most recently written news file, in seconds.
+
+    Returns None if no news files exist yet.
+    """
+    if not NEWS_DIR.exists():
+        return None
+    newest = 0.0
+    for f in NEWS_DIR.glob("*.md"):
+        newest = max(newest, f.stat().st_mtime)
+    if newest == 0.0:
+        return None
+    return time.time() - newest

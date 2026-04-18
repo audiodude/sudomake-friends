@@ -15,7 +15,7 @@ from .config import (
 from .chat_history import ChatMessage, append_message, load_messages, maybe_compact
 from .schedule import should_respond, get_availability
 from .brain import think_and_respond, maybe_initiate
-from .news import refresh_all_news
+from .news import refresh_all_news, news_age_seconds
 from .link_preview import fetch_previews
 
 logger = logging.getLogger(__name__)
@@ -360,18 +360,25 @@ class FriendGroup:
                 logger.exception(f"Error in catchup loop: {e}")
 
     async def _news_loop(self):
-        """Refresh news headlines twice daily at 7am and 6pm ET."""
+        """Refresh news headlines twice daily at 7am and 6pm ET, plus on startup if stale."""
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
         et = ZoneInfo("America/New_York")
         last_refresh = None
+        STARTUP_STALENESS_SECONDS = 4 * 3600
 
-        # Refresh immediately on startup
+        # Refresh on startup only if news is missing or older than the staleness threshold.
+        # Avoids hammering feeds on rapid restarts and keeps bots on consistent news context.
         try:
-            refresh_all_news()
-            last_refresh = datetime.now(et)
-            logger.info("Initial news refresh complete")
+            age = news_age_seconds()
+            if age is None or age > STARTUP_STALENESS_SECONDS:
+                refresh_all_news()
+                last_refresh = datetime.now(et)
+                logger.info("Initial news refresh complete")
+            else:
+                last_refresh = datetime.fromtimestamp(time.time() - age, et)
+                logger.info(f"News is {age/3600:.1f}h old, skipping initial refresh")
         except Exception as e:
             logger.exception(f"Initial news refresh failed: {e}")
 
