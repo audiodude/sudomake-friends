@@ -1,6 +1,6 @@
 # Sudomake Friends
 
-**v1.2.4**
+**v1.3.0**
 
 A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
@@ -153,6 +153,14 @@ Any platform that supports Docker + persistent volumes will work. The key requir
 Send these in the Telegram group chat:
 
 - `/test` or `/debug` — All bots check in with "Hi it's me, \<name\>"
+
+## Versioning
+
+The version at the top of this README is cosmetic — no build-time or runtime meaning, just a marker so you can tell at a glance whether your checkout is current. Rough guidance for bumps:
+
+- **Patch** — prompt tweaks, small fixes.
+- **Minor** — schema changes / migrations, major code revisions.
+- **Major** — reserved for big visible reworks.
 
 ## FAQ
 
