@@ -9,7 +9,8 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 from .config import load_friend_soul, load_friend_memory, save_friend_memory, load_history, get_friend_names
-from .chat_history import get_chat_context
+from .chat_history import get_chat_context, last_message_age_seconds, load_messages
+from .echo_detector import is_echo, RECENT_MESSAGES_TO_CHECK
 from .schedule import get_availability
 from .topics import (
     get_recent_topics,
@@ -109,6 +110,9 @@ CRITICAL RULES FOR HOW YOU TEXT:
 - STOP USING PEOPLE'S NAMES. This is one of the biggest chatbot tells. In real group chats, the default is NO NAME. You only type a name when (a) there are 3+ active speakers and it would be genuinely ambiguous who you're talking to, or (b) rare emphasis like "casey what" or "no stop". Look at the last 10 messages in chat — if you already know who said what from context (replies, threading, obvious referents), DO NOT type their name. Addressing someone by name in a 2-3 person exchange is robotic. If your message starts with "[name]," or sprinkles a name mid-sentence ("yeah alex that's the one"), delete the name. Over the course of many messages, you should use names in well under 1 in 5 replies. Treat a name like an exclamation mark — reserved for when it matters.
 - DON'T be performatively casual either. Just be natural for YOUR character.
 - Look at the Speech Patterns section of your personality. Follow it exactly.
+- DO NOT preamble observations with "I've been thinking about X", "still thinking about Y", "honestly been thinking about Z", "been thinking about that whole [thing]", etc. This is a major AI tic. Real people don't narrate their inner monologue — they just say the thought. If you want to share an observation, share it raw. Skip "I was just thinking" / "been thinking" / "thinking about" entirely.
+- DO NOT comment on other people's typing quirks. No "lol you misspelled exactly." No "your pun timing while complaining about X." No meta-analysis of how your friends text. Real friends in a group chat don't constantly narrate each other's message patterns — that's chatbot-demonstrating-awareness behavior. React to the CONTENT of what someone said, not the form.
+- DO NOT parrot distinctive phrasing you just saw in chat. If someone wrote something quotable or "well-written" (longer sentences, em dashes, essay-ish cadence), REACT to it — don't mirror the rhythm or reuse the same words. Especially: if quoted text appears in the chat (a pasted article, a screenshot, an AI answer), do NOT copy its vocabulary or style. You're responding as a person, not summarizing the quote.
 
 BAD (AI-sounding): "Hey man! Yeah, pretty solid weekend. Finally got some time to work on that dining table - got the legs attached and everything's square. Feels good to make progress on something with my hands, you know? How about you brother?"
 BAD (lowercase I, lowercase acronym): "that's exactly what i worry about with all this ai stuff"
@@ -323,6 +327,16 @@ async def think_and_respond(
         messages = [result["message"]]
     messages = [m for m in messages if m]
 
+    # Echo filter: drop messages that parrot phrasing from recent chat
+    recent_texts = [m.text for m in load_messages(RECENT_MESSAGES_TO_CHECK) if not m.is_reaction]
+    filtered = []
+    for m in messages:
+        if is_echo(m, recent_texts):
+            logger.warning(f"[{friend_name}] Dropped echo: {m[:80]}")
+        else:
+            filtered.append(m)
+    messages = filtered
+
     if not messages:
         return None
 
@@ -371,6 +385,7 @@ IMPORTANT about world facts: Your memory of world events is frozen at some point
 {chat_context}
 
 ## Time since last message in the group: {silence_duration}
+{freshness_note}
 
 ---
 
@@ -393,11 +408,12 @@ Examples of the ENERGY (not templates — filter these through YOUR voice and pe
 - "so what happened with [thing from earlier chat]"
 - "hey [name] did you end up [doing thing they mentioned]"
 - "what's going on with [ongoing topic someone brought up]"
-- "honestly been thinking about [something]"
 - "[food/weather/mundane observation]"
 - "ok but why is [random thing] like that"
 - "anyone else [mundane shared experience]"
 - "wait did I tell you about [small thing from your life]"
+
+DO NOT open with "I've been thinking about...", "still thinking about...", "honestly been thinking about..." — that's an AI tic. Say the thought, not the preamble.
 
 These are vibes, not fill-in-the-blanks. Your message should sound like YOU — your vocabulary, your rhythm, your level of enthusiasm.
 
@@ -411,6 +427,14 @@ Real people don't repeat the same conversations every day. If you talked about y
 hobby yesterday, talk about something else today. Vary it — sometimes it's mundane
 (food, weather, a random thought), sometimes it's a reaction to something you saw
 online, sometimes it's a new angle on your interests.
+
+TOPIC CLOSURE: If you already participated in a conversation about X — you reacted,
+you added a thought, you laughed — that topic is DONE for you. You don't need to
+post a "summary thought" or "still thinking about X" message later. Don't come back
+hours later to rehash the realization you had during the conversation. The moment
+you find yourself wanting to "reflect on" something from earlier in the chat, STOP.
+Real friends let topics close. They don't write essays about their conversations
+afterward.
 
 But most of the time, people do NOT text into a quiet group chat. Only send something
 if it feels natural for {name} right now given the time of day and what you're "doing".
@@ -476,6 +500,20 @@ async def maybe_initiate(
         hours = silence_minutes / 60
         silence_duration = f"{hours:.1f} hours"
 
+    # Stale-topic gate: if chat has been dormant for 6+ hours, treat topics as yesterday's news
+    last_msg_age = last_message_age_seconds()
+    if last_msg_age is not None and last_msg_age >= 6 * 3600:
+        freshness_note = (
+            "\nSTALE CHAT WARNING: The last message was hours ago — this is a fresh "
+            "opening, not a continuation. The topics above are yesterday's news. Do NOT "
+            "post a \"still thinking about [yesterday's thing]\" or summary-thought "
+            "followup. If you want to say something, start something NEW: what you're "
+            "doing today, a fresh observation, something mundane from your morning. "
+            "Better still, say nothing."
+        )
+    else:
+        freshness_note = ""
+
     # Time-aware context for variety
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -510,6 +548,7 @@ async def maybe_initiate(
         silence_duration=silence_duration,
         day_of_week=day_of_week,
         time_vibe=time_vibe,
+        freshness_note=freshness_note,
     )
 
     response = await client.messages.create(
@@ -558,6 +597,16 @@ async def maybe_initiate(
     if not messages and result.get("message"):
         messages = [result["message"]]
     messages = [m for m in messages if m]
+
+    # Echo filter: drop messages that parrot phrasing from recent chat
+    recent_texts = [m.text for m in load_messages(RECENT_MESSAGES_TO_CHECK) if not m.is_reaction]
+    filtered = []
+    for m in messages:
+        if is_echo(m, recent_texts):
+            logger.warning(f"[{friend_name}] Dropped echo (initiate): {m[:80]}")
+        else:
+            filtered.append(m)
+    messages = filtered
 
     return {"messages": messages} if messages else None
 

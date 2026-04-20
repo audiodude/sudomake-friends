@@ -47,6 +47,25 @@ def load_messages(limit: int = 100) -> list[ChatMessage]:
     return [ChatMessage(**json.loads(l)) for l in recent]
 
 
+def last_message_age_seconds() -> float | None:
+    """Age of the most recent chat message, in seconds. None if no messages."""
+    if not CHAT_PATH.exists():
+        return None
+    last_ts = 0.0
+    with open(CHAT_PATH) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                last_ts = max(last_ts, float(json.loads(line).get("timestamp", 0)))
+            except (ValueError, json.JSONDecodeError):
+                continue
+    if last_ts == 0.0:
+        return None
+    return time.time() - last_ts
+
+
 def get_chat_context(limit: int = 50) -> str:
     """Build a chat context string for the LLM, including summary if available."""
     parts = []
