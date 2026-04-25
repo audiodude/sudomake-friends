@@ -90,7 +90,7 @@ IMPORTANT about world facts: Your memory of world events is frozen at some point
 {chat_context}
 
 ## New message
-[{sender}]: {message}
+[msg:{message_id}][{sender}]: {message}
 {link_preview_block}
 
 ---
@@ -142,6 +142,8 @@ Respond with a JSON object (no markdown fencing):
 For "joke_format": If your reply is structured as any kind of joke (setup-punchline, sarcastic retort, deadpan one-liner, exaggeration for comedy), describe the structure in 3-6 words — e.g. "setup-punchline about client request", "sarcastic retort to own quote", "deadpan exaggeration about coworker". If your message isn't a joke, use null. BE HONEST about this — it's how we track what you've already done.
 
 For "complaint_topic": If your message complains or vents about something (work, a client, a coworker, traffic, etc), label the subject in 3-6 words — e.g. "client asking for absurd audio edits", "boss micromanaging meeting". If not a complaint, null.
+
+For "reply_to_message_id": Every message in the chat log has an ID tag like [msg:12345]. If your reply is responding to something earlier (not the newest message) and threading it would make the reference clear, set this to that message's ID (the integer, e.g. 12345). For a direct reply to the newest message or a general comment to the room, leave it null. Real people thread-reply sparingly — only when the referent would otherwise be ambiguous.
 
 For "delay_seconds": Real people don't reply instantly. They're doing other things — cooking, working, watching TV. Pick a realistic delay based on what {name} is doing right now and how urgent the message feels:
 - Quick reaction to something funny or addressed directly: 10-30 seconds
@@ -256,6 +258,7 @@ async def think_and_respond(
         chat_context=chat_context,
         sender=sender,
         message=message,
+        message_id=message_id,
         link_preview_block=link_preview_block,
     )
 

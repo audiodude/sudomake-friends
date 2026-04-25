@@ -25,7 +25,8 @@ class ChatMessage:
     def display(self) -> str:
         if self.is_reaction:
             return f"{self.sender} reacted {self.text} to msg:{self.reply_to}"
-        prefix = f"[{self.sender}]"
+        id_tag = f"[msg:{self.message_id}]" if self.message_id else ""
+        prefix = f"{id_tag}[{self.sender}]"
         if self.reply_to:
             prefix += f" (replying to msg:{self.reply_to})"
         return f"{prefix}: {self.text}"
