@@ -258,9 +258,13 @@ class FriendGroup:
                 if not availability["awake"]:
                     continue
 
-                # Chattier friends are more likely to initiate
+                # Chattier friends are more likely to initiate, but apply a global
+                # dampener so even high-chattiness friends don't flood when they
+                # have nothing real to say. Tune this knob to make initiations
+                # rarer overall without changing per-friend dials.
+                INITIATE_DAMPENER = 0.5
                 chattiness = friend_config.get("chattiness", 0.5)
-                if random.random() > chattiness:
+                if random.random() > chattiness * INITIATE_DAMPENER:
                     continue
 
                 logger.info(f"{name} considering starting a conversation (quiet for {silence_minutes}min)...")
