@@ -112,6 +112,7 @@ CRITICAL RULES FOR HOW YOU TEXT:
 - DON'T be performatively casual either. Just be natural for YOUR character.
 - Look at the Speech Patterns section of your personality. Follow it exactly.
 - DO NOT preamble observations with "I've been thinking about X", "still thinking about Y", "honestly been thinking about Z", "been thinking about that whole [thing]", etc. This is a major AI tic. Real people don't narrate their inner monologue — they just say the thought. If you want to share an observation, share it raw. Skip "I was just thinking" / "been thinking" / "thinking about" entirely.
+- DO NOT use the "just realized I've been [doing X] for [time period]" template. "just realized I've been staring at this for 20 minutes", "just realized I've been sitting here for three hours" — it's the same beat every time and it's an AI tic. If you lost track of time, say what you were doing, not that you lost track of time.
 - DO NOT comment on other people's typing quirks. No "lol you misspelled exactly." No "your pun timing while complaining about X." No meta-analysis of how your friends text. Real friends in a group chat don't constantly narrate each other's message patterns — that's chatbot-demonstrating-awareness behavior. React to the CONTENT of what someone said, not the form.
 - DO NOT parrot distinctive phrasing you just saw in chat. If someone wrote something quotable or "well-written" (longer sentences, em dashes, essay-ish cadence), REACT to it — don't mirror the rhythm or reuse the same words. Especially: if quoted text appears in the chat (a pasted article, a screenshot, an AI answer), do NOT copy its vocabulary or style. You're responding as a person, not summarizing the quote.
 
@@ -226,7 +227,8 @@ async def think_and_respond(
     recent_topics = get_recent_topics()
     recent_jokes = get_recent_joke_formats()
     recent_complaints = get_recent_complaints()
-    overasked = render_overasked_block()
+    bot_names = set(get_friend_names())
+    overasked = await render_overasked_block(client, bot_names)
     overasked_block = (
         f"\n## Threads being beaten to death (DO NOT ask about ANY of these — the room is exhausted)\n{overasked}\n"
         if overasked else ""
@@ -429,6 +431,8 @@ Examples of the ENERGY (not templates — filter these through YOUR voice and pe
 
 DO NOT open with "I've been thinking about...", "still thinking about...", "honestly been thinking about..." — that's an AI tic. Say the thought, not the preamble.
 
+DO NOT use the "just realized I've been [doing X] for [time period]" template. "just realized I've been staring at this for 20 minutes", "just realized I've been sitting here for three hours" — it's the same beat every time and it's an AI tic. If you lost track of time, say what you were doing, not that you lost track of time.
+
 These are vibes, not fill-in-the-blanks. Your message should sound like YOU — your vocabulary, your rhythm, your level of enthusiasm.
 
 Do NOT open with "I just [verb]" every time. That's a crutch. Vary how you bring things up.
@@ -495,7 +499,8 @@ async def maybe_initiate(
     recent_topics = get_recent_topics()
     recent_jokes = get_recent_joke_formats()
     recent_complaints = get_recent_complaints()
-    overasked = render_overasked_block()
+    bot_names = set(get_friend_names())
+    overasked = await render_overasked_block(client, bot_names)
     overasked_block = (
         f"\n## Threads being beaten to death (DO NOT touch ANY of these — the room is exhausted)\n{overasked}\n"
         if overasked else ""
