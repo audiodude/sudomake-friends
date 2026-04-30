@@ -60,7 +60,7 @@ def get_availability(friend_config: dict) -> dict:
         "at_work": at_work,
         "day_off": day_off,
         "responsiveness": responsiveness,
-        "local_time": now.strftime("%H:%M %Z"),
+        "local_time": now.strftime("%A %H:%M %Z"),
     }
 
 
