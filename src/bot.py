@@ -285,6 +285,30 @@ class FriendGroup:
                         self._record_spoke(name)
                         logger.info(f"{name} initiated ({len(sent)} msgs): {sent[0].text[:50]}...")
 
+                        # Trigger other bots to consider responding.
+                        # The poll loop may not see this message (e.g. poll bot
+                        # can't see its own sends), so we trigger directly.
+                        responders = []
+                        for other_name, other_bot in self.bots.items():
+                            if other_name == name:
+                                continue
+                            other_config = load_friend_config(other_name)
+                            engagement = self._get_engagement_modifier(other_name)
+                            if should_respond(other_config, is_bot_message=True,
+                                              engagement_modifier=engagement):
+                                responders.append((other_name, other_bot, other_config))
+
+                        if responders:
+                            logger.info(f"Initiation responders for {name}: {[n for n, _, _ in responders]}")
+                            task = asyncio.create_task(
+                                self._staggered_responses(
+                                    responders, name, sent[0].text,
+                                    sent[0].message_id,
+                                )
+                            )
+                            for rname, _, _ in responders:
+                                self._active_tasks[rname] = task
+
             except Exception as e:
                 logger.exception(f"Error in initiation loop: {e}")
 
@@ -524,6 +548,9 @@ class FriendGroup:
                 if bot.user_id == sender_id:
                     sender_name = name
                     break
+            logger.info(f"Processing bot message from {sender_name}: {display_text[:60]}")
+        else:
+            logger.info(f"Processing human message from {sender_name}: {display_text[:60]}")
 
         # Log the message to chat history
         chat_msg = ChatMessage(
@@ -543,6 +570,14 @@ class FriendGroup:
                 if prev_msg.sender in self.bots:
                     self._record_replied_to(prev_msg.sender)
                 break  # only check the most recent prior message
+
+        # If a bot message arrives while a staggered flow is already running,
+        # don't cancel it — the staggered flow handles reconsidering internally.
+        # Only create a new response chain for bot messages when idle (e.g. initiations).
+        has_active_flow = any(not t.done() for t in self._active_tasks.values())
+        if is_bot_message and has_active_flow:
+            logger.info(f"Bot message from {sender_name} while staggered flow active — letting flow handle it")
+            return
 
         # Cancel any pending responses — new message changes context
         for name, task in list(self._active_tasks.items()):
@@ -580,6 +615,9 @@ class FriendGroup:
                 continue
 
             responders.append((name, bot, friend_config))
+
+        if is_bot_message:
+            logger.info(f"Bot message responders: {[n for n, _, _ in responders] if responders else 'NONE'}")
 
         # All responders think concurrently, but send sequentially
         if responders:
