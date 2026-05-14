@@ -245,8 +245,8 @@ class FriendGroup:
                 else:
                     silence_minutes = 999
 
-                # Only try to initiate if chat has been quiet for at least 10 min
-                if silence_minutes < 10:
+                # Only try to initiate if chat has been quiet for at least 60 min
+                if silence_minutes < 60:
                     continue
 
                 # Pick one random bot to consider initiating
@@ -262,7 +262,7 @@ class FriendGroup:
                 # dampener so even high-chattiness friends don't flood when they
                 # have nothing real to say. Tune this knob to make initiations
                 # rarer overall without changing per-friend dials.
-                INITIATE_DAMPENER = 0.5
+                INITIATE_DAMPENER = 0.4
                 chattiness = friend_config.get("chattiness", 0.5)
                 if random.random() > chattiness * INITIATE_DAMPENER:
                     continue
