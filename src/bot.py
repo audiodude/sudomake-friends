@@ -249,6 +249,22 @@ class FriendGroup:
                 if silence_minutes < 60:
                     continue
 
+                # Decay: bots initiate less as time passes since last human message.
+                # This prevents bots from keeping the chat alive indefinitely on
+                # their own — they wind down unless a human re-engages.
+                bot_names = set(get_friend_names())
+                recent = load_messages(limit=50)
+                last_human_ts = None
+                for msg in reversed(recent):
+                    if msg.sender not in bot_names:
+                        last_human_ts = msg.timestamp
+                        break
+                if last_human_ts:
+                    hours_since_human = (time.time() - last_human_ts) / 3600
+                else:
+                    hours_since_human = 24
+                decay = 1.0 / (1 + hours_since_human / 4)
+
                 # Pick one random bot to consider initiating
                 name = random.choice(list(self.bots.keys()))
                 bot = self.bots[name]
@@ -260,14 +276,14 @@ class FriendGroup:
 
                 # Chattier friends are more likely to initiate, but apply a global
                 # dampener so even high-chattiness friends don't flood when they
-                # have nothing real to say. Tune this knob to make initiations
-                # rarer overall without changing per-friend dials.
+                # have nothing real to say. Decay further reduces the chance as
+                # time passes without human engagement.
                 INITIATE_DAMPENER = 0.4
                 chattiness = friend_config.get("chattiness", 0.5)
-                if random.random() > chattiness * INITIATE_DAMPENER:
+                if random.random() > chattiness * INITIATE_DAMPENER * decay:
                     continue
 
-                logger.info(f"{name} considering starting a conversation (quiet for {silence_minutes}min)...")
+                logger.info(f"{name} considering starting a conversation (quiet for {silence_minutes}min, {hours_since_human:.1f}h since human, decay={decay:.2f})...")
 
                 result = await maybe_initiate(
                     client=self.claude,

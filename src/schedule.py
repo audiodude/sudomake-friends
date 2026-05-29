@@ -86,7 +86,7 @@ def should_respond(friend_config: dict, is_bot_message: bool = False,
             responsiveness = 0.95
     elif is_bot_message:
         bot_reply_chance = friend_config.get("bot_reply_chance", 0.75)
-        responsiveness *= bot_reply_chance
+        responsiveness *= bot_reply_chance * 0.8
     else:
         responsiveness *= 0.75
 
