@@ -103,6 +103,9 @@ def generate_soul(client, candidate: dict, all_friends: list[dict],
     )
     traits = candidate.get("traits", [])
     traits_str = ", ".join(traits) if traits else "not specified"
+    axes = candidate.get("axes", {})
+    friction_hook = axes.get("friction_hook") or candidate.get("friction", "")
+    how_met = candidate.get("how_met", "")
 
     prompt = f"""Write a detailed SOUL.md personality file for a virtual chat bot character.
 This character will be in a group chat with friends.
@@ -116,17 +119,39 @@ their interests, their speech patterns — should flow from and reinforce these 
 A "sarcastic, loyal, impulsive" person texts differently than a "gentle, witty, stubborn"
 person. They have different childhoods, different relationships, different coping mechanisms.
 
+## Their friction with the user
+{friction_hook}
+This is a STANDING dynamic, not a one-off. It should surface in their
+disagreements, their speech examples, and their boundaries.
+
+## How they know the user
+{how_met}
+
 ## Other friends in the group
 {others_desc}
 
 ## Another friend in the group
 {user_context}
 
-CRITICAL INSTRUCTION: This is a WHOLE PERSON, not a walking job description. Their
-occupation is ONE facet of who they are. You MUST flesh out their entire life — where
-they grew up, their family, what they studied, what they eat, what they watch, what
-they do on a lazy Sunday. A real friend is someone you know deeply, not a LinkedIn
-profile with a texting style.
+CRITICAL INSTRUCTION: This is a WHOLE PERSON, not a walking job description.
+Their occupation is ONE facet of who they are. You MUST flesh out their entire
+life — where they grew up, their family, what they studied, what they eat,
+what they watch, what they do on a lazy Sunday.
+
+INTEREST EXCLUSIVITY: This character may share AT MOST ONE interest or
+touchpoint with the user (described below). Everything else comes from the
+character's own world. If the user likes coffee, farmers markets, vintage
+shopping, or synthesizers, this character does NOT — unless that is their one
+shared touchpoint. Friends are not interest-clones; they're people from
+different worlds who stuck.
+
+FRICTION IS REQUIRED: Real friendships contain standing disagreements. This
+character must have:
+- 2-3 concrete recurring disagreements with the user (the argument they've
+  been having for years — about money, technology, lifestyle, music, food)
+- 1-2 sincerely-held bad takes they will defend in chat (everyone has them)
+These are affectionate friction, not hostility. The friend who is wrong about
+something forever is more real than the friend who agrees with everything.
 
 The personality traits above should PERMEATE everything. If someone is "sarcastic",
 their text examples should drip with sarcasm. If someone is "anxious", their backstory
@@ -156,6 +181,12 @@ This should go BEYOND their professional identity. Ground it in the traits: {tra
 How do these traits manifest day-to-day? How do they interact with each other?
 What's charming about this person and what's annoying?)
 
+## Friction
+(REQUIRED: 2-3 standing disagreements with the user, each in one
+sentence — what the argument is and this character's position. Then 1-2
+sincerely-held bad takes they defend. These should be consistent with the
+friction dynamic described above.)
+
 ## Interests & Life
 (bullet list that covers their WHOLE life, not just their job niche:
 - Professional/hobby interests
@@ -167,8 +198,9 @@ What's charming about this person and what's annoying?)
 - What they do on a Friday night or lazy Sunday)
 
 ## Relationships
-(how they relate to each of the other friends — think about
-personality chemistry, not just shared interests)
+(how they relate to each of the other friends — include FRICTION, not just
+harmony. Who do they tease? Whose lifestyle baffles them? Real groups have
+edges. Also state how they met the user — use the life collision above.)
 
 ## Speech Patterns
 (very specific texting style: capitalization, punctuation, emoji usage, message length,
