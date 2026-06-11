@@ -182,8 +182,10 @@ How do these traits manifest day-to-day? How do they interact with each other?
 What's charming about this person and what's annoying?)
 
 ## Friction
-(REQUIRED: 2-3 standing disagreements with the user, each in one
-sentence — what the argument is and this character's position. Then 1-2
+(REQUIRED: 2-3 standing disagreements with the friend described under
+"Another friend in the group" — refer to them by their actual name, never
+as "the user". One sentence each: what the argument is and this character's
+position. Then 1-2
 sincerely-held bad takes they defend. These should be consistent with the
 friction dynamic described above.)
 
