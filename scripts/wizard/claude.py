@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+from wizard.axes import sample_profiles, render_profile
 from wizard.paths import load_env
 
 MODEL = "claude-opus-4-8"
@@ -21,8 +22,6 @@ def get_client(env_path: Path):
 def generate_candidates(client, context: str, held: list[dict],
                         existing_friends: list[str] | None = None,
                         count: int = CANDIDATE_COUNT) -> list[dict]:
-    from wizard.axes import sample_profiles, render_profile
-
     used_axes = [h["axes"] for h in held if h.get("axes")]
     profiles = sample_profiles(count, used_axes=used_axes)
     profiles_desc = "\n".join(render_profile(p, i + 1)
@@ -89,6 +88,7 @@ JSON array only, no markdown fencing:"""
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     candidates = json.loads(raw)
+    candidates = candidates[:count]
     for cand, prof in zip(candidates, profiles):
         cand["axes"] = prof
     return candidates
