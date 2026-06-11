@@ -376,6 +376,8 @@ RULES:
 - Use the friends' actual names, locations, and personalities from their SOULs.
 - NEVER use the words "real person", "user", "human", or "bot" — everyone is just a friend.
 - NEVER refer to anyone as "the central person" in the output — use their actual name.
+- Every friend is non-binary and uses they/them pronouns exclusively. Never
+  he/she/him/her for any friend, regardless of name or occupation.
 
 Write the HISTORY.md directly, no preamble:"""
 

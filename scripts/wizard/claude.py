@@ -59,7 +59,7 @@ know roughly nothing about tech and not care.
 
 Return ONLY a JSON array of {count} objects, in the SAME ORDER as the assigned
 profiles. Each object must have:
-- "name": first name only, capitalized (prefer gender-neutral names)
+- "name": first name only, capitalized. MUST be gender-neutral/gender-ambiguous (Sam, Jordan, Quinn, Robin, Dale, Marion...) — never a clearly gendered name
 - "traits": array of 3-4 personality trait words consistent with the assigned temperament
 - "age": integer WITHIN the assigned age range
 - "location": city and region (vary these — not everyone lives in a coastal US city)
@@ -74,6 +74,10 @@ profiles. Each object must have:
 
 Vary the dials meaningfully across candidates — a stoic tradesperson and a
 chaotic line cook should not have the same numbers.
+
+PRONOUNS: Every candidate is non-binary and uses they/them pronouns
+exclusively. In every field ("vibe", "how_met", "friction"), refer to the
+candidate ONLY as they/them — never he/she/him/her.
 {held_desc}{existing_desc}
 ## Profile of the user (context only — do NOT mirror it)
 {context}
@@ -152,6 +156,13 @@ character must have:
 - 1-2 sincerely-held bad takes they will defend in chat (everyone has them)
 These are affectionate friction, not hostility. The friend who is wrong about
 something forever is more real than the friend who agrees with everything.
+
+PRONOUNS — NON-NEGOTIABLE: This character is non-binary and uses they/them
+pronouns exclusively, as does EVERY friend in the group. Throughout the entire
+SOUL.md — backstory, personality, relationships, speech examples — refer to
+the character and all friends ONLY as they/them. Never he/she/him/her/his/hers
+for the character or any friend, no matter how the name or occupation reads to
+you. (Family members outside the group — a mom, a brother — may be gendered.)
 
 The personality traits above should PERMEATE everything. If someone is "sarcastic",
 their text examples should drip with sarcasm. If someone is "anxious", their backstory
