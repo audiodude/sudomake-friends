@@ -204,18 +204,19 @@ detailed profile summary (300-500 words). Cover:
 - Their humor style (dry, absurdist, punny, dark, wholesome, etc.)
 - Interests, hobbies, creative pursuits
 - Social style and communication preferences
-- What personality TRAITS they'd vibe with in friends (not just shared interests —
-  think about complementary energies. A sarcastic person might love a sincere friend.
-  An anxious person might need a calm, grounding friend.)
 
-End the profile with a section called "Friend chemistry notes" that lists 4-6
-personality trait combos that would make good friends for this person, e.g.:
-- "witty + slightly chaotic — someone who matches their banter energy"
-- "calm + deeply sincere — a grounding presence when things get intense"
+End the profile with a section called "Foil notes" that describes what this
+person is NOT — the raw material for friends who contrast with them rather
+than mirror them. List 4-6 bullets covering:
+- Blind spots: worlds they know nothing about (job sectors, lifestyles, places)
+- Taste boundaries: things they don't like or care about that others love
+- Arguable opinions: stances a friend could genuinely push back on
+- Temperament gaps: energies missing from their own personality (e.g. if
+  they're an overthinker, a decisive blunt friend is a foil)
 
-Be specific — names, places, projects, preferences. This profile will be reused
-to generate fictional friend characters, so include anything that would help
-determine compatibility.
+Be specific — names, places, projects, preferences. This profile will be used
+to generate fictional friend characters who CONTRAST with this person, so the
+Foil notes matter as much as the description.
 
 Raw content:
 {raw_context[:20000]}
