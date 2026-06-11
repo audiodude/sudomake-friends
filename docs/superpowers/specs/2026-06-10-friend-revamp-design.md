@@ -115,6 +115,12 @@ No code change. The TUI already supports holding any number; the user holds 3.
 - Prompt changes are verified by running real generation and reading the
   output — the user re-runs setup from scratch as the acceptance test.
 
+## Versioning
+
+This ships as **v2.0.0** — a major bump. The generation pipeline is
+fundamentally reworked and the recommended path for existing users is full
+regeneration, not migration.
+
 ## Out of scope
 
 - Migrations: none needed. Generator changes only affect new generation;
