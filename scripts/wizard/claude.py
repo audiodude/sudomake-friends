@@ -4,7 +4,7 @@ from pathlib import Path
 
 from wizard.paths import load_env
 
-MODEL = "claude-4-sonnet-20250514"
+MODEL = "claude-opus-4-8"
 CANDIDATE_COUNT = 8
 SCRAPE_TIMEOUT = 180
 

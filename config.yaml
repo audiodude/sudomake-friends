@@ -1,6 +1,6 @@
 # Sudomake Friends Configuration
 anthropic_api_key: "${ANTHROPIC_API_KEY}"
-model: "claude-4-sonnet-20250514"
+model: "claude-sonnet-4-6"
 
 # Telegram group chat ID (set after creating the group)
 group_chat_id: "${TELEGRAM_GROUP_CHAT_ID}"  # -5159528618
