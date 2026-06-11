@@ -46,7 +46,8 @@ def candidate_to_text(c: dict) -> str:
         "",
         f"Vibe: {c.get('vibe', '')}",
         "",
-        f"Why: {c.get('why', '')}",
+        f"How met: {c.get('how_met', '')}",
+        f"Friction: {c.get('friction', '')}",
         f"Timezone: {c.get('timezone', '')}",
     ]
     return "\n".join(lines)
@@ -73,8 +74,10 @@ def text_to_candidate(text: str, original: dict) -> dict:
             c["occupation"] = value
         elif key == "vibe":
             c["vibe"] = value
-        elif key == "why":
-            c["why"] = value
+        elif key == "how met":
+            c["how_met"] = value
+        elif key == "friction":
+            c["friction"] = value
         elif key == "timezone":
             c["timezone"] = value
     # Validate timezone after all fields are parsed (location may help)

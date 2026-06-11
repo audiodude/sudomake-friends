@@ -35,7 +35,8 @@ def _show_detail_modal(stdscr, candidate: dict):
         lines.append("")
         lines.extend(_wrap(candidate.get('vibe', '')))
         lines.append("")
-        lines.extend(_wrap(f"Why: {candidate.get('why', '')}"))
+        lines.extend(_wrap(f"How met: {candidate.get('how_met', '')}"))
+        lines.extend(_wrap(f"Friction: {candidate.get('friction', '')}"))
         lines.append("")
         lines.append(f"  Timezone: {candidate.get('timezone', '?')}")
 

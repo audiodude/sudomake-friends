@@ -21,52 +21,62 @@ def get_client(env_path: Path):
 def generate_candidates(client, context: str, held: list[dict],
                         existing_friends: list[str] | None = None,
                         count: int = CANDIDATE_COUNT) -> list[dict]:
+    from wizard.axes import sample_profiles, render_profile
+
+    used_axes = [h["axes"] for h in held if h.get("axes")]
+    profiles = sample_profiles(count, used_axes=used_axes)
+    profiles_desc = "\n".join(render_profile(p, i + 1)
+                              for i, p in enumerate(profiles))
+
     held_desc = ""
     if held:
         held_desc = f"""
-These friends have already been selected in this session (do NOT regenerate them,
-and make sure new candidates have good chemistry with them):
-{json.dumps(held, indent=2)}
+These friends have already been selected in this session (do NOT regenerate them;
+new candidates should be clearly DIFFERENT people from them):
+{json.dumps([{k: v for k, v in h.items() if k != "axes"} for h in held], indent=2)}
 """
     existing_desc = ""
     if existing_friends:
         existing_desc = f"""
-These friends ALREADY EXIST in the group (do NOT regenerate them, generate
-candidates who would fit in with this existing group):
+These friends ALREADY EXIST in the group (do NOT regenerate them):
 {', '.join(existing_friends)}
 """
 
-    prompt = f"""Based on this profile of a person, generate exactly {count} fictional friend
-candidates for a virtual group chat.
+    prompt = f"""Generate exactly {count} fictional friend candidates for a virtual group
+chat. Each candidate has an ASSIGNED PROFILE below. Your job is to invent a
+believable, specific human who fits their profile — NOT to invent people
+similar to the user.
 
-START WITH PERSONALITY, NOT PROFESSION. Think about what kind of PERSON would be
-a great friend — their energy, their humor, their emotional style — then figure out
-what they do for a living as a secondary detail.
+## Assigned profiles (one candidate each, in order)
+{profiles_desc}
 
-Return ONLY a JSON array of objects. Each object must have:
-- "name": first name only, capitalized (prefer gender-neutral names or gender-ambiguous nicknames)
-- "traits": array of 3-4 personality trait words (e.g. ["sarcastic", "loyal", "impulsive"] or ["gentle", "witty", "stubborn"]). These are the CORE of who this person is.
-- "age": integer
-- "location": city and country only (e.g. "Berlin, Germany" or "San Francisco, CA")
-- "occupation": what they do (keep it brief — this is NOT the interesting part)
-- "vibe": 1-3 sentences about who they are as a PERSON. Lead with personality and energy, not their job. How do they make you feel when you're around them? What's their deal? IMPORTANT: Show their traits through behavior and anecdotes, don't just list adjectives. "Will roast your music taste then make you a perfect playlist" not "sarcastic but caring".
-- "why": why they'd be this person's friend — focus on personality chemistry, not shared hobbies (1 sentence)
+A friend is NOT someone with the same interests and temperament as you. Real
+friends come from life collisions — an old job, a college roommate, a neighbor,
+a friend's ex — and stick around because of who they are, not what they're into.
+The user's profile below is context for the "how_met" field and for aiming each
+candidate's friction hook. DO NOT mirror the user's interests, job, vocabulary,
+or vibe. If the user is a tech person, candidates in non-tech worlds should
+know roughly nothing about tech and not care.
+
+Return ONLY a JSON array of {count} objects, in the SAME ORDER as the assigned
+profiles. Each object must have:
+- "name": first name only, capitalized (prefer gender-neutral names)
+- "traits": array of 3-4 personality trait words consistent with the assigned temperament
+- "age": integer WITHIN the assigned age range
+- "location": city and region (vary these — not everyone lives in a coastal US city)
+- "occupation": a specific job within the assigned world (e.g. world "trades" -> "elevator mechanic", not "tradesperson")
+- "vibe": 1-3 sentences about who they are as a PERSON. Show traits through behavior, not adjectives.
+- "how_met": one sentence — the life collision through which they know the user (an old job, school, a neighbor, a wedding, jury duty...). NOT shared interests.
+- "friction": one sentence making the assigned friction hook concrete and personal to this character
 - "timezone": IANA timezone string
 - "chattiness": float 0.0-1.0 — how often they respond / initiate
-- "jokiness": float 0.0-1.0 — how much they reach for jokes vs. being plain/sincere. Low = dry, literal, earnest. High = playful, quippy (but NEVER setup-punchline bit comedy)
-- "whininess": float 0.0-1.0 — how much they complain about things. Low = stoic/positive, high = often venting. Match to the person's vibe
+- "jokiness": float 0.0-1.0 — low = dry/literal/earnest, high = playful/quippy (NEVER setup-punchline bit comedy)
+- "whininess": float 0.0-1.0 — low = stoic/positive, high = often venting
 
-CRITICAL: A friend group needs PERSONALITY DIVERSITY, not just occupational diversity.
-You need the snarky one, the sincere one, the chaotic one, the calm one, the one who
-roasts everyone, the one who gives unsolicited advice, the one who sends memes at 2am.
-Don't make everyone pleasant and supportive — real friend groups have friction, teasing,
-and complementary energies.
-
-Make the friends diverse in personality, location, and timezone.
-Some should be local, some remote. Mix of introverts/extroverts, tech/non-tech.
+Vary the dials meaningfully across candidates — a stoic tradesperson and a
+chaotic line cook should not have the same numbers.
 {held_desc}{existing_desc}
-
-## Profile of the person
+## Profile of the user (context only — do NOT mirror it)
 {context}
 
 JSON array only, no markdown fencing:"""
@@ -78,7 +88,10 @@ JSON array only, no markdown fencing:"""
     raw = response.content[0].text.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    return json.loads(raw)
+    candidates = json.loads(raw)
+    for cand, prof in zip(candidates, profiles):
+        cand["axes"] = prof
+    return candidates
 
 
 def generate_soul(client, candidate: dict, all_friends: list[dict],
