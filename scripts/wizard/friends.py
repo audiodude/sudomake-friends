@@ -108,7 +108,7 @@ def create_friend_dir(friends_dir: Path, name: str, soul: str,
         "chattiness": candidate.get("chattiness", 0.5),
         "jokiness": candidate.get("jokiness", 0.5),
         "whininess": candidate.get("whininess", 0.3),
-        "bot_reply_chance": 0.3,
+        "bot_reply_chance": 0.75,
     }
     with open(friend_dir / "config.yaml", "w") as f:
         yaml.dump(config, f, default_flow_style=False)
