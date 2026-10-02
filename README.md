@@ -1,6 +1,6 @@
 # Sudomake Friends
 
-**v3.0.0**
+**v3.2.0**
 
 A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
@@ -11,9 +11,15 @@ A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
 Each friend has their own personality, backstory, persistent memory, timezone-aware schedule, and texting style. They decide independently whether to respond, talk to each other, and sometimes start conversations on their own. It's like a real group chat except nobody flakes on plans because nobody makes plans because they aren't real.
 
+## What's new in 3.2.0
+
+Friends now pair **Jev** with **GPT-6 Luna** for conversation and photo understanding, keeping their personalities, shared history, and memories. Memories and conversation tracking now reflect what a friend actually sent, not something they drafted and never said.
+
+Existing OpenRouter installs keep the same API key and friend data. Conversation models are fixed for this release; background and friend-generation model choices remain configurable.
+
 ## What's new in 3.0.0
 
-Friends now run through **OpenRouter**, rather than a Claude-only API connection. Choose models from different providers with one API key, while keeping your existing friends and memories. Re-run the setup wizard to add your OpenRouter key; a direct Anthropic key cannot be reused.
+The OpenRouter migration replaced the Claude-only API connection with one API key for your friends and background work, while keeping existing friends and memories. Re-run the setup wizard to add your OpenRouter key; a direct Anthropic key cannot be reused.
 
 ### Upgrading from 2.x
 
@@ -49,7 +55,7 @@ All your data lives in `~/.sudomake-friends/`. Drop the docker container and del
 
 All model calls go through OpenRouter. The wizard saves `OPENROUTER_API_KEY` in `~/.sudomake-friends/.env`. Existing installs need a new OpenRouter key; an Anthropic key cannot be reused. Re-running the wizard preserves your friends and memories and resumes setup after collecting the new key.
 
-OpenRouter lets you choose models from different providers for conversations, background work, and friend generation. Defaults remain unchanged; set these optional overrides in the same `.env` file to choose your own:
+Conversations use Jev and GPT-6 Luna through your existing OpenRouter key. These conversation models are pinned, not selected by environment overrides. Background and friend-generation defaults remain unchanged; set these optional overrides in the same `.env` file:
 
 ```dotenv
 OPENROUTER_MODEL=anthropic/claude-sonnet-5
@@ -57,7 +63,7 @@ OPENROUTER_HELPER_MODEL=anthropic/claude-haiku-4.5
 OPENROUTER_GENERATION_MODEL=anthropic/claude-opus-4.8
 ```
 
-These select the conversation, background, and friend-generation models respectively. Use full OpenRouter model IDs, such as `openai/gpt-6-luna`, rather than bare model names. Choose models that support text responses with reasoning disabled; the conversation model should also support images. Environment overrides take precedence over the runtime defaults in `config.yaml`.
+These select the chat-history summary, background-helper, and friend-generation models respectively. `OPENROUTER_MODEL` no longer changes the friends' conversation models; it still selects chat-history summaries and the legacy personality-tuning migration. Use full OpenRouter model IDs rather than bare model names, and choose text-capable models supporting reasoning-disabled responses. Environment overrides take precedence over the corresponding runtime defaults in `config.yaml`.
 
 After changing runtime credentials or models, rebuild and restart from your local checkout with `docker compose up --build -d`. Changing the generation model affects future generation, not existing friends. Prompts are sent through OpenRouter to the provider serving your selected model; review your OpenRouter privacy settings before using personal context.
 

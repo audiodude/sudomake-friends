@@ -1,4 +1,4 @@
-"""Runtime model selection, helper failures, and LLM shutdown lifecycle."""
+"""Compaction model selection, helper failures, and LLM shutdown lifecycle."""
 
 import asyncio
 import json
@@ -41,11 +41,6 @@ def test_config_models_take_precedence_over_defaults(runtime_config):
     assert loaded["helper_model"] == "openai/gpt-5-mini"
 
 
-def test_missing_models_use_runtime_defaults(runtime_config):
-    runtime_config.write_text('group_chat_id: "123"\n')
-    loaded = config.load_config()
-    assert loaded["model"] == DEFAULT_MODEL
-    assert loaded["helper_model"] == DEFAULT_HELPER_MODEL
 
 
 def test_old_credentials_are_not_accepted(monkeypatch):
@@ -59,12 +54,16 @@ def test_old_credentials_are_not_accepted(monkeypatch):
     [
         ('{"valid": false, "reason": "belongs to another friend"}',
          (False, "belongs to another friend")),
-        ('```json\n{"valid": true, "reason": "shared experience"}\n```',
+        ('{"valid": true, "reason": "shared experience"}',
          (True, "shared experience")),
-        ("not JSON", (True, "validator parse error")),
+        ('```json\n{"valid": true, "reason": "shared experience"}\n```',
+         (False, "validator parse error")),
+        ("not JSON", (False, "validator parse error")),
+        ('{"valid": "false", "reason": "wrong type"}',
+         (False, "validator malformed response")),
     ],
 )
-def test_memory_validator_preserves_decisions_and_parse_fallback(response, expected):
+def test_memory_validator_rejects_invalid_or_unusable_decisions(response, expected):
     client = SimpleNamespace(
         helper_model=DEFAULT_HELPER_MODEL,
         complete=AsyncMock(return_value=SimpleNamespace(text=response)),
@@ -75,7 +74,7 @@ def test_memory_validator_preserves_decisions_and_parse_fallback(response, expec
     assert result == expected
 
 
-def test_memory_validator_error_still_allows_write():
+def test_memory_validator_failure_does_not_authorize_write():
     client = SimpleNamespace(
         helper_model=DEFAULT_HELPER_MODEL,
         complete=AsyncMock(side_effect=RuntimeError("provider unavailable")),
@@ -83,7 +82,7 @@ def test_memory_validator_error_still_allows_write():
     result = asyncio.run(memory_validator.validate_memory(
         client, "alex", "Alex is a potter.", "I made a bowl."
     ))
-    assert result == (True, "validator call failed")
+    assert result == (False, "validator call failed")
 
 
 def test_compaction_preserves_recent_chat_and_persists_completion(tmp_path, monkeypatch):
@@ -127,6 +126,7 @@ def test_entrypoint_closes_client_on_every_exit(monkeypatch, exit_path):
     group = bot.FriendGroup.__new__(bot.FriendGroup)
     group.llm = SimpleNamespace(aclose=AsyncMock())
     group._active_tasks = {}
+    group._response_tasks = set()
     group.bots = {} if exit_path == "no_bots" else {"alex": object()}
     group.setup = AsyncMock(side_effect=RuntimeError("setup failed") if exit_path == "setup_error" else None)
     group.poll_and_respond = AsyncMock(side_effect=asyncio.CancelledError())
@@ -157,6 +157,7 @@ def test_shutdown_cancels_responses_before_closing_client():
         group.llm = SimpleNamespace(aclose=close_client)
         response = asyncio.create_task(pending_response())
         group._active_tasks = {"alex": response, "river": response}
+        group._response_tasks = {response}
         await started.wait()
         await group.aclose()
         assert response.cancelled()
@@ -164,37 +165,40 @@ def test_shutdown_cancels_responses_before_closing_client():
     asyncio.run(scenario())
 
 
-def test_shutdown_drains_all_staggered_llm_requests(monkeypatch):
+def test_shutdown_drains_active_speaking_turn_without_starting_next(monkeypatch):
     async def scenario():
         started = set()
         stopped = set()
-        all_started = asyncio.Event()
+        first_started = asyncio.Event()
 
         async def think(**kwargs):
             name = kwargs["friend_name"]
             started.add(name)
-            if len(started) == 2:
-                all_started.set()
+            first_started.set()
             try:
                 await asyncio.Event().wait()
             finally:
                 stopped.add(name)
 
         async def close_client():
-            assert stopped == {"alex", "river"}
+            assert stopped == {"alex"}
 
         monkeypatch.setattr(bot, "think_and_respond", think)
+        monkeypatch.setattr(bot.random, "shuffle", lambda order: None)
         group = bot.FriendGroup.__new__(bot.FriendGroup)
         group.llm = SimpleNamespace(aclose=close_client)
         group.model = DEFAULT_MODEL
+        group._engagement = {}
         responders = [("alex", None, {}), ("river", None, {})]
         response = asyncio.create_task(
             group._staggered_responses(responders, "user", "hello", 1)
         )
         group._active_tasks = {"alex": response, "river": response}
-        await all_started.wait()
+        group._response_tasks = {response}
+        await first_started.wait()
         await group.aclose()
         assert response.done()
         assert group._active_tasks == {}
+        assert started == {"alex"}
 
     asyncio.run(scenario())

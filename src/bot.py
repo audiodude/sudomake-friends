@@ -14,7 +14,8 @@ from .config import (
 )
 from .chat_history import ChatMessage, append_message, load_messages, maybe_compact
 from .schedule import should_respond, get_availability
-from .brain import think_and_respond, maybe_initiate
+from .brain import describe_photo, think_and_respond, maybe_initiate
+from .reply import PreparedReply
 from .news import refresh_all_news, news_age_seconds
 from .link_preview import fetch_previews
 
@@ -74,16 +75,38 @@ class FriendBot:
             return None
 
 
+class IncomingMedia:
+    """Shared prerequisites for one incoming message, including queued mentions."""
+
+    def __init__(self, caption: str = "", photo_file_id: str | None = None,
+                 image_bytes: bytes | None = None,
+                 image_media_type: str | None = None):
+        self.caption = caption
+        self.photo_file_id = photo_file_id
+        self.image_bytes = image_bytes
+        self.image_media_type = image_media_type
+        self.photo_description = ""
+        self.link_previews = ""
+        self._previews_loaded = False
+        self._lock = asyncio.Lock()
+
+    @property
+    def has_photo(self) -> bool:
+        return self.photo_file_id is not None or self.image_bytes is not None
+
+
 class PendingMention:
     """A message that mentioned a bot who wasn't available."""
     def __init__(self, friend_name: str, sender: str, text: str,
-                 message_id: int, timestamp: float, was_at_mention: bool):
+                 message_id: int, timestamp: float, was_at_mention: bool,
+                 media: IncomingMedia | None = None):
         self.friend_name = friend_name
         self.sender = sender
         self.text = text
         self.message_id = message_id
         self.timestamp = timestamp
         self.was_at_mention = was_at_mention
+        self.media = media
 
 
 class FriendGroup:
@@ -95,6 +118,7 @@ class FriendGroup:
             api_key=self.global_config.get("openrouter_api_key", ""),
             helper_model=self.global_config.get("helper_model"),
         )
+        # This configurable model is used only for existing chat compaction.
         self.model = self.global_config.get("model") or DEFAULT_MODEL
         self.bots: dict[str, FriendBot] = {}
         self._bot_user_ids: set[int] = set()
@@ -106,6 +130,84 @@ class FriendGroup:
         self._engagement: dict[str, dict] = {}
         # Active response tasks per bot — cancelled when new message arrives
         self._active_tasks: dict[str, asyncio.Task] = {}
+        # Includes cancelled/replaced operations until their cancellation drains.
+        self._response_tasks: set[asyncio.Task] = set()
+
+    def _cancel_responses(self):
+        """Invalidate every current opportunity without stopping periodic loops."""
+        for task in set(self._active_tasks.values()):
+            if not task.done():
+                task.cancel()
+        self._active_tasks.clear()
+
+    def _release_response_task(self, names, task):
+        for name in names:
+            if self._active_tasks.get(name) is task:
+                self._active_tasks.pop(name)
+
+    def _start_response_task(self, names, operation):
+        task = asyncio.create_task(operation)
+        self._response_tasks.add(task)
+        task.add_done_callback(self._response_tasks.discard)
+        names = tuple(names)
+        for name in names:
+            self._active_tasks[name] = task
+        # Also handles cancellation before the coroutine first starts.
+        task.add_done_callback(lambda done: self._release_response_task(names, done))
+        return task
+
+    async def _await_response_task(self, task):
+        """A human can cancel the child without cancelling its periodic owner."""
+        try:
+            await asyncio.shield(task)
+            return True
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise
+            return False
+
+    async def _prepare_media(self, media: IncomingMedia | None):
+        if media is None:
+            return
+        # Immediate responders and later catchups reuse the same visual context.
+        async with media._lock:
+            if media.has_photo:
+                if not media.image_bytes:
+                    poll_bot = next(iter(self.bots.values()))
+                    tg_file = await poll_bot.bot.get_file(media.photo_file_id)
+                    data = await tg_file.download_as_bytearray()
+                    if not data:
+                        raise ValueError("Photo download returned no image")
+                    media.image_bytes = bytes(data)
+                    media.image_media_type = "image/jpeg"
+                if not media.image_media_type:
+                    raise ValueError("Photo media type is missing")
+                if not media.photo_description:
+                    description = await describe_photo(
+                        self.llm, media.image_bytes, media.image_media_type,
+                    )
+                    if not isinstance(description, str) or not description.strip():
+                        raise ValueError("Photo description returned no visual context")
+                    media.photo_description = description
+            if not media._previews_loaded:
+                if media.caption:
+                    try:
+                        media.link_previews = await asyncio.to_thread(
+                            fetch_previews, media.caption,
+                        )
+                    except Exception:
+                        logger.exception("Link preview fetch failed")
+                media._previews_loaded = True
+
+    def _reply_target(self, name: str, message_id: int | None) -> int | None:
+        if not message_id:
+            return None
+        for message in load_messages(limit=50):
+            if message.message_id == message_id:
+                return message_id if message.sender != name else None
+        return None
 
     def _get_engagement_modifier(self, name: str) -> float:
         """Return a multiplier (0.0-1.0+) based on how engaged this bot is
@@ -152,27 +254,29 @@ class FriendGroup:
         eng["last_replied_to"] = time.time()
 
     async def _send_messages(self, bot: FriendBot, name: str,
-                             messages: list[str],
+                             reply: PreparedReply,
                              reply_to_message_id: int | None = None) -> list[ChatMessage]:
-        """Send one or more messages with natural delays between them.
-        Returns list of ChatMessages that were sent."""
+        """Commit each confirmed atom before any subsequent await or history work."""
         sent_msgs = []
-        for i, text in enumerate(messages):
-            # First message gets reply_to, subsequent ones don't
+        for i, atom in enumerate(reply.atoms):
+            # First surviving atom gets reply_to, subsequent ones don't.
             reply_to = reply_to_message_id if i == 0 else None
-            sent = await bot.send_message(text, reply_to_message_id=reply_to)
+            sent = await bot.send_message(atom.text, reply_to_message_id=reply_to)
             if sent:
+                reply.commit_atom(name, atom.index)
+                if not sent_msgs:
+                    self._record_spoke(name)
                 msg = ChatMessage(
                     timestamp=time.time(),
                     sender=name,
-                    text=text,
+                    text=atom.text,
                     message_id=sent.message_id,
                     reply_to=reply_to or 0,
                 )
                 append_message(msg)
                 sent_msgs.append(msg)
-            # Delay between split messages (simulate typing)
-            if i < len(messages) - 1:
+            # Delay between split messages (simulate typing).
+            if i < len(reply.atoms) - 1:
                 await asyncio.sleep(max(2.0, min(12.0, random.gauss(7.0, 2.5))))
         return sent_msgs
 
@@ -195,7 +299,7 @@ class FriendGroup:
 
     async def aclose(self):
         """Stop in-flight responses before closing the shared LLM client."""
-        tasks = set(self._active_tasks.values())
+        tasks = self._response_tasks | set(self._active_tasks.values())
         for task in tasks:
             task.cancel()
         try:
@@ -343,51 +447,68 @@ class FriendGroup:
 
                 logger.info(f"{name} considering starting a conversation (quiet for {silence_minutes}min, {hours_since_human:.1f}h since human, decay={decay:.2f})...")
 
-                result = await maybe_initiate(
-                    client=self.llm,
-                    model=self.model,
-                    friend_name=name,
-                    friend_config=friend_config,
-                    silence_minutes=silence_minutes,
+                if name in self._active_tasks and not self._active_tasks[name].done():
+                    continue
+                task = self._start_response_task(
+                    [name],
+                    self._initiate(name, bot, friend_config, silence_minutes),
                 )
-
-                if result and result.get("messages"):
-                    await asyncio.sleep(random.randint(2, 10))
-
-                    sent = await self._send_messages(bot, name, result["messages"])
-                    if sent:
-                        self._record_spoke(name)
-                        logger.info(f"{name} initiated ({len(sent)} msgs): {sent[0].text[:50]}...")
-
-                        # Trigger other bots to consider responding.
-                        # The poll loop may not see this message (e.g. poll bot
-                        # can't see its own sends), so we trigger directly.
-                        reply_cfg = get_activity_config()["reply"]
-                        responders = []
-                        for other_name, other_bot in self.bots.items():
-                            if other_name == name:
-                                continue
-                            other_config = load_friend_config(other_name)
-                            engagement = self._get_engagement_modifier(other_name)
-                            if should_respond(other_config, is_bot_message=True,
-                                              engagement_modifier=engagement,
-                                              human_dampener=reply_cfg["human_dampener"],
-                                              bot_dampener=reply_cfg["bot_dampener"]):
-                                responders.append((other_name, other_bot, other_config))
-
-                        if responders:
-                            logger.info(f"Initiation responders for {name}: {[n for n, _, _ in responders]}")
-                            task = asyncio.create_task(
-                                self._staggered_responses(
-                                    responders, name, sent[0].text,
-                                    sent[0].message_id,
-                                )
-                            )
-                            for rname, _, _ in responders:
-                                self._active_tasks[rname] = task
+                await self._await_response_task(task)
 
             except Exception as e:
                 logger.exception(f"Error in initiation loop: {e}")
+
+    async def _initiate(self, name, bot, friend_config, silence_minutes):
+        try:
+            reply = await maybe_initiate(
+                client=self.llm,
+                friend_name=name,
+                friend_config=friend_config,
+                silence_minutes=silence_minutes,
+            )
+            if reply is None or not reply.atoms:
+                return
+            await asyncio.sleep(random.randint(2, 10))
+            sent = await self._send_messages(
+                bot, name, reply,
+                reply_to_message_id=self._reply_target(name, reply.reply_to_message_id),
+            )
+            if not sent:
+                return
+            logger.info(f"{name} initiated ({len(sent)} msgs): {sent[0].text[:50]}...")
+
+            # Polling may not see the initiating bot's own sends.
+            reply_cfg = get_activity_config()["reply"]
+            responders = []
+            for other_name, other_bot in self.bots.items():
+                if other_name == name:
+                    continue
+                active = self._active_tasks.get(other_name)
+                if active is not None and not active.done():
+                    continue
+                other_config = load_friend_config(other_name)
+                engagement = self._get_engagement_modifier(other_name)
+                if should_respond(
+                    other_config, is_bot_message=True,
+                    engagement_modifier=engagement,
+                    human_dampener=reply_cfg["human_dampener"],
+                    bot_dampener=reply_cfg["bot_dampener"],
+                ):
+                    responders.append((other_name, other_bot, other_config))
+            if responders:
+                self._start_response_task(
+                    [n for n, _, _ in responders],
+                    self._staggered_responses(
+                        responders, name, sent[0].text, sent[0].message_id,
+                    ),
+                )
+        except asyncio.CancelledError:
+            logger.info("%s's initiation cancelled — new message or shutdown", name)
+            raise
+        except Exception:
+            logger.exception("Initiation pipeline failed for %s", name)
+        finally:
+            self._release_response_task([name], asyncio.current_task())
 
     async def _catchup_loop(self):
         """Periodically check if bots with pending mentions are now available."""
@@ -398,24 +519,25 @@ class FriendGroup:
                 continue
 
             try:
-                still_pending = []
-                for mention in self._pending_mentions:
+                for mention in list(self._pending_mentions):
                     # Drop mentions older than 6 hours — too stale
                     age_hours = (time.time() - mention.timestamp) / 3600
                     if age_hours > 6:
                         logger.debug(f"Dropping stale mention for {mention.friend_name}")
+                        self._pending_mentions.remove(mention)
                         continue
 
                     if mention.friend_name not in self.bots:
+                        self._pending_mentions.remove(mention)
                         continue
 
                     bot = self.bots[mention.friend_name]
                     friend_config = load_friend_config(mention.friend_name)
                     availability = get_availability(friend_config)
 
-                    # Are they available now?
-                    if not availability["awake"]:
-                        still_pending.append(mention)
+                    # Don't replace another in-flight opportunity for this friend.
+                    active = self._active_tasks.get(mention.friend_name)
+                    if not availability["awake"] or (active is not None and not active.done()):
                         continue
 
                     # For @mentions, very likely to catch up. For name mentions, moderate.
@@ -428,41 +550,64 @@ class FriendGroup:
                     if availability["at_work"]:
                         work_type = friend_config.get("work_type", "office")
                         if work_type != "office":
-                            still_pending.append(mention)
                             continue
                         catchup_chance *= 0.7
 
                     if random.random() > catchup_chance:
-                        still_pending.append(mention)
                         continue
 
                     logger.info(f"{mention.friend_name} catching up on mention from {mention.sender}")
 
-                    result = await think_and_respond(
-                        client=self.llm,
-                        model=self.model,
-                        friend_name=mention.friend_name,
-                        sender=mention.sender,
-                        message=mention.text,
-                        message_id=mention.message_id,
-                        friend_config=friend_config,
+                    self._pending_mentions.remove(mention)
+                    task = self._start_response_task(
+                        [mention.friend_name],
+                        self._catch_up(mention, bot, friend_config),
                     )
-
-                    if result and result.get("messages"):
-                        await asyncio.sleep(random.randint(3, 15))
-                        sent = await self._send_messages(
-                            bot, mention.friend_name, result["messages"],
-                            reply_to_message_id=mention.message_id,
-                        )
-                        if sent:
-                            self._record_spoke(mention.friend_name)
-                            logger.info(f"{mention.friend_name} caught up ({len(sent)} msgs): {sent[0].text[:50]}...")
-                    # Whether they responded or not, they "saw" it — remove from queue
-
-                self._pending_mentions = still_pending
+                    if not await self._await_response_task(task):
+                        # A new human invalidates the whole current catchup pass.
+                        break
 
             except Exception as e:
                 logger.exception(f"Error in catchup loop: {e}")
+
+    async def _catch_up(self, mention, bot, friend_config):
+        name = mention.friend_name
+        try:
+            try:
+                await self._prepare_media(mention.media)
+            except Exception:
+                logger.exception("Catchup media prerequisite failed for %s", name)
+                return
+            media = mention.media
+            reply = await think_and_respond(
+                client=self.llm,
+                friend_name=name,
+                sender=mention.sender,
+                message=mention.text,
+                message_id=mention.message_id,
+                friend_config=friend_config,
+                image_bytes=media.image_bytes if media else None,
+                image_media_type=media.image_media_type if media else None,
+                photo_description=media.photo_description if media else "",
+                link_previews=media.link_previews if media else "",
+            )
+            if reply is None or not reply.atoms:
+                return
+            await asyncio.sleep(random.randint(3, 15))
+            # The stored mention proves this target even after history compaction.
+            sent = await self._send_messages(
+                bot, name, reply,
+                reply_to_message_id=mention.message_id if mention.sender != name else None,
+            )
+            if sent:
+                logger.info(f"{name} caught up ({len(sent)} msgs): {sent[0].text[:50]}...")
+        except asyncio.CancelledError:
+            logger.info("%s's catchup cancelled — new message or shutdown", name)
+            raise
+        except Exception:
+            logger.exception("Catchup pipeline failed for %s", name)
+        finally:
+            self._release_response_task([name], asyncio.current_task())
 
     async def _news_loop(self):
         """Refresh news headlines twice daily at 7am and 6pm ET, plus on startup if stale."""
@@ -568,6 +713,11 @@ class FriendGroup:
 
     async def _handle_message(self, message):
         """Process an incoming message and let friends respond."""
+        sender_id = message.from_user.id
+        is_bot_message = sender_id in self._bot_user_ids
+        if not is_bot_message:
+            # Cancel before any download, preview, or other awaited preparation.
+            self._cancel_responses()
         # /test or /debug — all bots check in
         if message.text and message.text.strip() in ("/test", "/debug"):
             for name, bot in self.bots.items():
@@ -577,23 +727,6 @@ class FriendGroup:
                 )
                 await asyncio.sleep(1)
             return
-
-        # Download photo if present (largest size)
-        image_bytes: bytes | None = None
-        image_media_type: str | None = None
-        if message.photo:
-            try:
-                largest = message.photo[-1]
-                poll_bot = next(iter(self.bots.values()))
-                tg_file = await poll_bot.bot.get_file(largest.file_id)
-                data = await tg_file.download_as_bytearray()
-                image_bytes = bytes(data)
-                # Telegram photos are always served as JPEG
-                image_media_type = "image/jpeg"
-                logger.info(f"Downloaded photo ({len(image_bytes)} bytes) from message")
-            except Exception as e:
-                logger.exception(f"Failed to download photo: {e}")
-                image_bytes = None
 
         # Build the text representation of this message
         caption = message.caption or message.text or ""
@@ -605,21 +738,11 @@ class FriendGroup:
         if not display_text:
             return
 
-        # Fetch link previews once for all responders to share
-        link_previews = ""
-        if caption:
-            try:
-                link_previews = await asyncio.to_thread(fetch_previews, caption)
-                if link_previews:
-                    logger.info(f"Fetched link previews ({len(link_previews)} chars)")
-            except Exception as e:
-                logger.exception(f"Link preview fetch failed: {e}")
-
-        sender_id = message.from_user.id
+        media = IncomingMedia(
+            caption=caption,
+            photo_file_id=message.photo[-1].file_id if message.photo else None,
+        )
         sender_name = message.from_user.first_name or message.from_user.username
-
-        # Figure out if this is from a human or from one of the bots
-        is_bot_message = sender_id in self._bot_user_ids
         if is_bot_message:
             for name, bot in self.bots.items():
                 if bot.user_id == sender_id:
@@ -649,19 +772,13 @@ class FriendGroup:
                 break  # only check the most recent prior message
 
         # If a bot message arrives while a staggered flow is already running,
-        # don't cancel it — the staggered flow handles reconsidering internally.
+        # Don't cancel it: later speakers build fresh context at their own turn.
         # Only create a new response chain for bot messages when idle (e.g. initiations).
         has_active_flow = any(not t.done() for t in self._active_tasks.values())
         if is_bot_message and has_active_flow:
             logger.info(f"Bot message from {sender_name} while staggered flow active — letting flow handle it")
             return
 
-        # Cancel any pending responses — new message changes context
-        for name, task in list(self._active_tasks.items()):
-            if not task.done():
-                task.cancel()
-                logger.info(f"{name}'s pending response cancelled — new message arrived")
-        self._active_tasks.clear()
 
         # Determine which friends want to respond
         reply_cfg = get_activity_config()["reply"]
@@ -688,6 +805,7 @@ class FriendGroup:
                         message_id=message.message_id,
                         timestamp=time.time(),
                         was_at_mention=by_at,
+                        media=media,
                     ))
                     logger.info(f"{name} was mentioned but unavailable — queued for later")
                 else:
@@ -699,17 +817,15 @@ class FriendGroup:
         if is_bot_message:
             logger.info(f"Bot message responders: {[n for n, _, _ in responders] if responders else 'NONE'}")
 
-        # All responders think concurrently, but send sequentially
+        # Generate only at each shuffled speaking turn, after prior commits.
         if responders:
-            task = asyncio.create_task(
+            self._start_response_task(
+                [name for name, _, _ in responders],
                 self._staggered_responses(
                     responders, sender_name, display_text, message.message_id,
-                    image_bytes=image_bytes, image_media_type=image_media_type,
-                    link_previews=link_previews,
-                )
+                    media=media,
+                ),
             )
-            for name, _, _ in responders:
-                self._active_tasks[name] = task
 
         # Periodically compact chat history
         chat_config = self.global_config.get("chat", {})
@@ -720,142 +836,58 @@ class FriendGroup:
         )
 
     async def _staggered_responses(self, responders, sender, message, message_id,
-                                    image_bytes: bytes | None = None,
-                                    image_media_type: str | None = None,
-                                    link_previews: str = ""):
-        """All bots think concurrently, but send one at a time with staggered delays.
-
-        After each bot sends, remaining bots get a fresh LLM call to reconsider
-        their response in light of what was just said.
-        """
-        think_tasks = {}
+                                   media: IncomingMedia | None = None):
+        """Generate each friend's one reply using the latest delivered state."""
         try:
-            # Phase 1: Everyone thinks at once
-            for name, bot, friend_config in responders:
-                think_tasks[name] = asyncio.create_task(
-                    think_and_respond(
+            if not responders:
+                return
+            try:
+                await self._prepare_media(media)
+            except Exception:
+                logger.exception("Reply media prerequisite failed for msg:%s", message_id)
+                return
+            send_order = list(responders)
+            random.shuffle(send_order)
+            someone_sent = False
+            for name, bot, friend_config in send_order:
+                last_spoke = self._engagement.get(name, {}).get("last_spoke")
+                try:
+                    reply = await think_and_respond(
                         client=self.llm,
-                        model=self.model,
                         friend_name=name,
                         sender=sender,
                         message=message,
                         message_id=message_id,
                         friend_config=friend_config,
-                        image_bytes=image_bytes,
-                        image_media_type=image_media_type,
-                        link_previews=link_previews,
+                        image_bytes=media.image_bytes if media else None,
+                        image_media_type=media.image_media_type if media else None,
+                        photo_description=media.photo_description if media else "",
+                        link_previews=media.link_previews if media else "",
                     )
-                )
-
-            results = {}
-            for name, task in think_tasks.items():
-                try:
-                    results[name] = await task
-                except Exception as e:
-                    logger.exception(f"Error in {name}'s thinking: {e}")
-
-            # Phase 2: Send one at a time, shuffled for variety
-            send_order = list(responders)
-            random.shuffle(send_order)
-
-            someone_sent = False
-            for i, (name, bot, friend_config) in enumerate(send_order):
-                result = results.get(name)
-                if not result or not result.get("messages"):
-                    continue
-
-                # If someone already sent, reconsider with fresh context
-                if someone_sent:
-                    logger.info(f"{name} reconsidering after another bot responded...")
-                    try:
-                        result = await think_and_respond(
-                            client=self.llm,
-                            model=self.model,
-                            friend_name=name,
-                            sender=sender,
-                            message=message,
-                            message_id=message_id,
-                            friend_config=friend_config,
-                            image_bytes=image_bytes,
-                            image_media_type=image_media_type,
-                            link_previews=link_previews,
-                        )
-                    except Exception as e:
-                        logger.exception(f"Error in {name}'s reconsideration: {e}")
+                    if reply is None or not reply.atoms:
                         continue
-                    if not result or not result.get("messages"):
-                        continue
-
-                # Stagger delay: first bot gets normal delay, subsequent get extra
-                delay = result.get("delay_seconds", 3)
-                if someone_sent:
-                    delay += random.uniform(3, 8)
-                await asyncio.sleep(delay)
-
-                # Prevent self-replies
-                reply_to = result.get("reply_to_message_id")
-                if reply_to:
-                    recent = load_messages(limit=50)
-                    for msg in recent:
-                        if msg.message_id == reply_to and msg.sender == name:
-                            reply_to = None
-                            break
-
-                sent = await self._send_messages(bot, name, result["messages"],
-                                                  reply_to_message_id=reply_to)
-                if sent:
-                    self._record_spoke(name)
-                    someone_sent = True
-                    logger.info(f"{name} responded ({len(sent)} msgs): {sent[0].text[:50]}...")
-
+                    delay = reply.delay_seconds
+                    if someone_sent:
+                        delay += random.uniform(3, 8)
+                    await asyncio.sleep(delay)
+                    sent = await self._send_messages(
+                        bot, name, reply,
+                        reply_to_message_id=self._reply_target(name, reply.reply_to_message_id),
+                    )
+                    if sent:
+                        someone_sent = True
+                        logger.info(f"{name} responded ({len(sent)} msgs): {sent[0].text[:50]}...")
+                except Exception:
+                    logger.exception("Response pipeline failed for %s", name)
+                    # A partially delivered batch still warrants the stagger.
+                    someone_sent = someone_sent or (
+                        self._engagement.get(name, {}).get("last_spoke") != last_spoke
+                    )
         except asyncio.CancelledError:
-            logger.info("Staggered responses cancelled — new message arrived")
+            logger.info("Staggered responses cancelled — new message or shutdown")
+            raise
         finally:
-            for task in think_tasks.values():
-                task.cancel()
-            if think_tasks:
-                await asyncio.gather(*think_tasks.values(), return_exceptions=True)
-            for name, _, _ in responders:
-                self._active_tasks.pop(name, None)
-
-    async def _friend_consider_response(
-        self, name: str, bot: FriendBot, friend_config: dict,
-        sender: str, message: str, message_id: int
-    ):
-        """Have one friend consider and optionally respond to a message."""
-        try:
-            result = await think_and_respond(
-                client=self.llm,
-                model=self.model,
-                friend_name=name,
-                sender=sender,
-                message=message,
-                message_id=message_id,
-                friend_config=friend_config,
+            self._release_response_task(
+                [name for name, _, _ in responders], asyncio.current_task(),
             )
 
-            if result and result.get("messages"):
-                delay = result.get("delay_seconds", 3)
-                await asyncio.sleep(delay)
-
-                # Prevent self-replies
-                reply_to = result.get("reply_to_message_id")
-                if reply_to:
-                    recent = load_messages(limit=50)
-                    for msg in recent:
-                        if msg.message_id == reply_to and msg.sender == name:
-                            reply_to = None
-                            break
-
-                sent = await self._send_messages(bot, name, result["messages"],
-                                                  reply_to_message_id=reply_to)
-                if sent:
-                    self._record_spoke(name)
-                    logger.info(f"{name} responded ({len(sent)} msgs): {sent[0].text[:50]}...")
-
-        except asyncio.CancelledError:
-            logger.info(f"{name}'s response was interrupted by new message")
-        except Exception as e:
-            logger.exception(f"Error in {name}'s response: {e}")
-        finally:
-            self._active_tasks.pop(name, None)
