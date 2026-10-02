@@ -183,3 +183,23 @@ def test_no_requests_still_reports_all_four_candidates_as_unattempted(tmp_path):
         assert metrics[model]["silence_count"] == 0
         assert metrics[model]["missing_result_count"] == 1
         assert metrics[model]["cost_total"] is None
+
+
+def test_writer_drafts_are_scoreable_but_not_social_decisions(tmp_path):
+    from evaluation.model_compare.scorecard import scoring_data
+
+    snapshot = case()
+    snapshot["output_contract"] = "writer_plaintext_v1"
+    records = [result(parsed={"messages": ["The blue glaze suits it."]}, raw="The blue glaze suits it.")]
+    report.write_report(tmp_path, [snapshot], records)
+    blind, reveal, metrics = outputs(tmp_path)
+    model_metrics = metrics[MODELS[0]]
+    assert model_metrics["writer_draft_count"] == 1
+    assert model_metrics["response_count"] == 0
+    assert model_metrics["silence_count"] == 0
+    assert model_metrics["format_error_count"] == 0
+    assert "**Writer draft:**" in blind
+    assert "**Decision:**" not in blind
+    data = scoring_data([snapshot], records, reveal)
+    candidate = next(candidate for candidate in data["cases"][0]["candidates"] if candidate["attempted"])
+    assert candidate["text"] == "The blue glaze suits it."

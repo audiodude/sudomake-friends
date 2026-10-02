@@ -6,7 +6,7 @@ Run these commands from the repository root. Keep generated evaluation data outs
 
 ## Prepare and run a comparison
 
-The current lineup is Claude Sonnet 5, Claude Haiku 4.5, GPT-6 Luna, and Gemini 3.8 Flash. Each receives the same frozen case prompts. Gemini requires reasoning and uses its lowest supported effort; its output allowance includes reasoning. The other models disable reasoning.
+The current lineup is Claude Sonnet 5, Claude Haiku 4.5, GPT-6 Luna, and Gemini 3.8 Flash. Each receives the same frozen runtime **writer** prompt, conditional on Jev accepting the opportunity. Capture assumes acceptance locally, without a Jev request. This compares writing, not social decisions or metadata extraction. Gemini requires reasoning and uses its lowest supported effort; its output allowance includes reasoning. The other models disable reasoning.
 
 Prepare the default 25 cases without paid generation requests:
 
@@ -14,13 +14,15 @@ Prepare the default 25 cases without paid generation requests:
 uv run python -m evaluation.compare_models
 ```
 
-Preparation reads the installed friends and retained chat under `~/.sudomake-friends/`, captures actual runtime prompts, fetches current model pricing, and prints the private output directory. The default sample includes reply decisions and quiet-chat initiation opportunities. These are opportunities to respond, not a replay of the scheduling and probability gates.
+Preparation reads the installed friends and retained chat under `~/.sudomake-friends/`, captures actual runtime writer prompts, fetches current model pricing, and prints the private output directory. The default sample includes replies and quiet-chat initiation opportunities. No scheduling, probability, or social-decision gate is replayed.
 
 Run that exact snapshot, using its printed `cases.json` path:
 
 ```bash
 uv run python -m evaluation.compare_models --run --cases-file /path/to/prepared/cases.json
 ```
+
+Previously frozen combined-JSON cases can still be run and scored under their original contract. New snapshots identify their plain-text writer contract explicitly; results and scorecards do not count writer drafts as social decisions.
 
 The API key comes from exported `OPENROUTER_API_KEY` or the installation's `.env`. A shell variable must be exported to reach the Python process. Do not put credentials in evaluation files.
 
@@ -54,7 +56,7 @@ http://127.0.0.1:8787/
 - Review one case at a time, with its conversation excerpt and all four candidates.
 - Expand the full frozen prompt to check personality, memories, or context not shown in the excerpt.
 - Give each candidate one overall score: **Would I want this response in the group?** Consider naturalness, personality fit, context coherence, restraint, and memory accuracy.
-- **Select `0` explicitly.** Blank means unscored, not neutral. Silence is a valid decision and should be judged for appropriateness.
+- **Select `0` explicitly.** Blank means unscored, not neutral. New comparisons contain conditional writer drafts, not silence decisions. In archived combined-JSON comparisons, explicit silence is valid and should be judged for appropriateness.
 - Scores attach to stable case-and-letter response IDs. Letters A–D change models between cases; they are not model identities.
 - Progress and your place save in the same browser and origin. Clearing browser storage, changing ports, or switching browsers may require restoring an export.
 - Use **Export scores** for a backup. **Restore exported scores** restores scores and position. Exports from another comparison or changed letter map are rejected.
@@ -75,7 +77,7 @@ The letter map is preserved when reports are regenerated. Exported scores are al
 | +2 | Very good; distinctly fits this friend. |
 | +3 | Excellent; exactly the response you would want. |
 
-Format and request failures are shown separately from silence. You may score the conversational quality of an invalid response's raw text, but JSON reliability remains a separate measure.
+Format and request failures are shown separately from silence. You may score the conversational quality of an invalid response's raw text, but output-contract reliability remains a separate measure.
 
 ### Interpreting scores
 
@@ -118,11 +120,11 @@ Default output: `~/.sudomake-friends/evaluations/<timestamp>/`. Run directories 
 |---|---|
 | `cases.json` | Frozen prompts, personalities, memories, excerpts, and sampling limitations. |
 | `plan.json` | Selected models, catalogue pricing, settings, and reservations. |
-| `results.jsonl` | Raw completions, parsed decisions, usage, charges, latency, and failures. |
+| `results.jsonl` | Raw completions, parsed outputs, usage, charges, latency, and failures. |
 | `run.json` | Attempted requests, returned charges, unknown charges, and stopping reason. |
 | `report.md` | Blinded text comparison, with independently shuffled letters per case. |
 | `reveal.json` | Stable case-letter-to-model mapping. Keep closed while scoring. |
-| `metrics.json` | Model-labelled cost, reliability, latency, and decision counts. |
+| `metrics.json` | Model-labelled cost, reliability, latency, writer-draft counts, and archived decision counts. |
 | `scorecard.html` | Private browser scorecard with frozen context and outputs. |
 | `score-summary.json` | Aggregates from a supplied identified score export. |
 
@@ -133,6 +135,6 @@ Browser exports contain response IDs, scores, position, and a comparison fingerp
 - Current personalities, configuration, and memories are reused for historical excerpts. They may contain hindsight; this is not a reconstruction of what each friend knew then.
 - Historical summaries, shared history, and news are included only when their current snapshot's modification time permits it. Modification times are availability proxies, not version history.
 - Previously pruned topics cannot be reconstructed. Historical nag-classifier outputs, images, and fetched link previews are not replayed.
-- Scheduling/probability gates, echo filtering, helper validation, bot-to-bot feedback loops, and end-to-end chat frequency are not evaluated.
-- One sample per case does not establish a model's typical behavior. Silence and willingness to initiate differ across models.
+- Scheduling/probability gates, Jev social decisions, metadata extraction, echo filtering, helper validation, bot-to-bot feedback loops, and end-to-end chat frequency are not evaluated in new writer comparisons.
+- One sample per case does not establish a model's typical behavior. Only archived combined-JSON cases compare silence and willingness to initiate.
 - Trial charges reflect these requests and their cache behavior—not a prediction of daily running costs.

@@ -27,6 +27,8 @@ def validate_cases(cases: list[dict]) -> None:
         ids.add(case["case_id"])
         if case.get("kind") not in ("reply", "initiate"):
             raise ValueError("Unknown case kind.")
+        if case.get("output_contract", "combined_json") not in ("combined_json", "writer_plaintext_v1"):
+            raise ValueError("Unknown frozen output contract.")
         if type(case.get("max_tokens")) is not int or not 1 <= case["max_tokens"] <= 4096:
             raise ValueError("Case max_tokens must be between 1 and 4096.")
         messages = case.get("messages")
