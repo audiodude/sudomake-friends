@@ -1,6 +1,6 @@
 # Sudomake Friends
 
-**v2.2.0**
+**v3.0.0**
 
 A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 
@@ -10,6 +10,10 @@ A Telegram group chat where your friends are AI bots. Yes, it's come to this.
 </tr></table>
 
 Each friend has their own personality, backstory, persistent memory, timezone-aware schedule, and texting style. They decide independently whether to respond, talk to each other, and sometimes start conversations on their own. It's like a real group chat except nobody flakes on plans because nobody makes plans because they aren't real.
+
+## What's new in 3.0.0
+
+Friends now run through **OpenRouter**, rather than a Claude-only API connection. Choose models from different providers with one API key, while keeping your existing friends and memories. Re-run the setup wizard to add your OpenRouter key; a direct Anthropic key cannot be reused.
 
 ## Quick Start
 
@@ -33,7 +37,7 @@ All your data lives in `~/.sudomake-friends/`. Drop the docker container and del
 
 All model calls go through OpenRouter. The wizard saves `OPENROUTER_API_KEY` in `~/.sudomake-friends/.env`. Existing installs need a new OpenRouter key; an Anthropic key cannot be reused. Re-running the wizard preserves your friends and memories and resumes setup after collecting the new key.
 
-The defaults retain the existing Claude models. To select different models, set these optional overrides in the same `.env` file:
+OpenRouter lets you choose models from different providers for conversations, background work, and friend generation. Defaults remain unchanged; set these optional overrides in the same `.env` file to choose your own:
 
 ```dotenv
 OPENROUTER_MODEL=anthropic/claude-sonnet-5
