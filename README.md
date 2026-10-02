@@ -47,6 +47,12 @@ After changing runtime credentials or models, rebuild and restart from your loca
 
 The wizard accepts quoted `.env` values and passes a private, temporary unquoted copy to Docker outside the image build context. If you use `docker run --env-file` yourself, omit wrapping quotes in that file: Docker treats them as literal characters.
 
+### Offline model comparison
+
+Compare models offline using your friends' existing context, then judge their responses in a private local web app. Nothing is posted to Telegram or saved to the friends' memories.
+
+See [evaluation instructions](evaluations/README.md) for running comparisons, scoring responses, and interpreting results.
+
 ### Other commands
 
 ```bash
