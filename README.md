@@ -15,6 +15,18 @@ Each friend has their own personality, backstory, persistent memory, timezone-aw
 
 Friends now run through **OpenRouter**, rather than a Claude-only API connection. Choose models from different providers with one API key, while keeping your existing friends and memories. Re-run the setup wizard to add your OpenRouter key; a direct Anthropic key cannot be reused.
 
+### Upgrading from 2.x
+
+**A new OpenRouter API key is required before rebuilding or restarting with 3.0.0.** Your existing Anthropic key cannot be converted or reused.
+
+Re-run the setup wizard and choose **deploy** to keep your existing setup:
+
+```bash
+uv run https://raw.githubusercontent.com/audiodude/sudomake-friends/main/scripts/initialize.py
+```
+
+The wizard collects and saves `OPENROUTER_API_KEY` before deployment, preserving your friends, memories, and Telegram settings. You can quit and resume later. If you update manually instead, set the new key in `~/.sudomake-friends/.env` first; rebuilding with only `ANTHROPIC_API_KEY` will not work.
+
 ## Quick Start
 
 You need [git](https://git-scm.com/downloads), [uv](https://docs.astral.sh/uv/), and [Docker](https://docs.docker.com/get-docker/) installed. Then:
