@@ -5,8 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 
-from scripts.model_compare.report import _write_private
-from scripts.model_compare.scorecard import scoring_data, summarize_scores, write_scorecard
+from evaluation.model_compare.report import _write_private
+from evaluation.model_compare.scorecard import scoring_data, summarize_scores, write_scorecard
 
 
 def _make_server(directory: Path, data: dict, reveal: dict, port: int) -> ThreadingHTTPServer:

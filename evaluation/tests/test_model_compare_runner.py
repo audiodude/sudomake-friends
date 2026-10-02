@@ -6,8 +6,8 @@ import json
 import httpx
 import pytest
 
-from scripts.model_compare.runner import MODELS, Rates, parse_output, payload_for, request_one, reserve_cost, run_cases
-from scripts.compare_models import validate_cases
+from evaluation.model_compare.runner import MODELS, Rates, parse_output, payload_for, request_one, reserve_cost, run_cases
+from evaluation.compare_models import validate_cases
 
 
 def case(kind="reply", case_id="one"):

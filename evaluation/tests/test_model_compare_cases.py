@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from scripts.model_compare import cases
+from evaluation.model_compare import cases
 from src import brain, chat_history, config, nag_detector, schedule
 from src.llm import AsyncOpenRouter
 

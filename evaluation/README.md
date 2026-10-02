@@ -11,7 +11,7 @@ The current lineup is Claude Sonnet 5, Claude Haiku 4.5, GPT-6 Luna, and Gemini 
 Prepare the default 25 cases without paid generation requests:
 
 ```bash
-uv run python -m scripts.compare_models
+uv run python -m evaluation.compare_models
 ```
 
 Preparation reads the installed friends and retained chat under `~/.sudomake-friends/`, captures actual runtime prompts, fetches current model pricing, and prints the private output directory. The default sample includes reply decisions and quiet-chat initiation opportunities. These are opportunities to respond, not a replay of the scheduling and probability gates.
@@ -19,7 +19,7 @@ Preparation reads the installed friends and retained chat under `~/.sudomake-fri
 Run that exact snapshot, using its printed `cases.json` path:
 
 ```bash
-uv run python -m scripts.compare_models --run --cases-file /path/to/prepared/cases.json
+uv run python -m evaluation.compare_models --run --cases-file /path/to/prepared/cases.json
 ```
 
 The API key comes from exported `OPENROUTER_API_KEY` or the installation's `.env`. A shell variable must be exported to reach the Python process. Do not put credentials in evaluation files.
@@ -42,7 +42,7 @@ Requests run sequentially. Before starting a case, the runner reserves conservat
 No new model calls are needed:
 
 ```bash
-uv run python -m scripts.score_models /path/to/comparison-directory --serve
+uv run python -m evaluation.score_models /path/to/comparison-directory --serve
 ```
 
 Open:
@@ -89,10 +89,26 @@ Neither average fills missing entries with zeros. Old score sequences with omitt
 To summarize an exported score file from the command line:
 
 ```bash
-uv run python -m scripts.score_models /path/to/comparison-directory --scores /path/to/export.json
+uv run python -m evaluation.score_models /path/to/comparison-directory --scores /path/to/export.json
 ```
 
 This writes `score-summary.json` in the comparison directory. Omitting `--serve` and `--scores` generates a self-contained `scorecard.html` you can open directly; model summaries are available through the local app or command line.
+
+## Development
+
+Evaluation-only commands and helpers live in `evaluation/`; their regression tests live in `evaluation/tests/`. Application and setup-wizard tests remain in the root `tests/` directory.
+
+Run just the evaluation tests:
+
+```bash
+uv run --extra dev pytest evaluation/tests
+```
+
+Or run the complete suite from the repository root:
+
+```bash
+uv run --extra dev pytest
+```
 
 ## Files and privacy
 
@@ -110,7 +126,7 @@ Default output: `~/.sudomake-friends/evaluations/<timestamp>/`. Run directories 
 | `scorecard.html` | Private browser scorecard with frozen context and outputs. |
 | `score-summary.json` | Aggregates from a supplied identified score export. |
 
-Browser exports contain response IDs, scores, position, and a comparison fingerprint. Treat exports and all generated result files as private: **do not commit, publish, or deploy them as static assets**. `evaluations/` in this repository contains instructions, not a place to store personal test data.
+Browser exports contain response IDs, scores, position, and a comparison fingerprint. Treat exports and all generated result files as private: **do not commit, publish, or deploy them as static assets**. `evaluation/` in this repository contains evaluation code, tests, and instructions—not personal test data.
 
 ## Limits
 

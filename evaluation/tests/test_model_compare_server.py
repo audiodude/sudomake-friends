@@ -4,7 +4,7 @@ import http.client
 import socket
 import threading
 
-from scripts.score_models import _make_server
+from evaluation.score_models import _make_server
 
 
 def test_idle_browser_connection_does_not_block_page_loading(tmp_path):

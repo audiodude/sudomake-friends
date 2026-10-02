@@ -2,15 +2,11 @@
 
 import json
 import stat
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from scripts.model_compare import report
-from scripts.model_compare.runner import MODELS
+from evaluation.model_compare import report
+from evaluation.model_compare.runner import MODELS
 
 
 def case(case_id="case-1", kind="reply"):

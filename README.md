@@ -67,7 +67,7 @@ The wizard accepts quoted `.env` values and passes a private, temporary unquoted
 
 Compare models offline using your friends' existing context, then judge their responses in a private local web app. Nothing is posted to Telegram or saved to the friends' memories.
 
-See [evaluation instructions](evaluations/README.md) for running comparisons, scoring responses, and interpreting results.
+See [evaluation instructions](evaluation/README.md) for running comparisons, scoring responses, and interpreting results.
 
 ### Other commands
 

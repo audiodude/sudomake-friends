@@ -4,8 +4,8 @@ import copy
 
 import pytest
 
-from scripts.model_compare.runner import MODELS
-from scripts.model_compare.scorecard import scoring_data, summarize_scores
+from evaluation.model_compare.runner import MODELS
+from evaluation.model_compare.scorecard import scoring_data, summarize_scores
 
 
 @pytest.fixture

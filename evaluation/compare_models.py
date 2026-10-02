@@ -11,9 +11,9 @@ from pathlib import Path
 from dotenv import dotenv_values
 import httpx
 
-from scripts.model_compare.cases import build_cases
-from scripts.model_compare.report import write_report
-from scripts.model_compare.runner import MODELS, Rates, private_write, run_cases, payload_for, reserve_cost
+from evaluation.model_compare.cases import build_cases
+from evaluation.model_compare.report import write_report
+from evaluation.model_compare.runner import MODELS, Rates, private_write, run_cases, payload_for, reserve_cost
 from src.llm import BASE_URL
 
 
