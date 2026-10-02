@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from dotenv import dotenv_values, set_key
+
 
 def get_paths(root: Path) -> dict:
     return {
@@ -12,14 +14,11 @@ def get_paths(root: Path) -> dict:
 
 
 def load_env(env_path: Path) -> dict:
-    env = {}
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-    return env
+    return {
+        key: value
+        for key, value in dotenv_values(env_path, interpolate=False).items()
+        if value is not None
+    }
 
 
 def save_env(env_path: Path, env: dict):
@@ -28,7 +27,5 @@ def save_env(env_path: Path, env: dict):
 
 
 def set_env_var(env_path: Path, key: str, value: str):
-    env = load_env(env_path)
-    env[key] = value
-    save_env(env_path, env)
+    set_key(env_path, key, value, quote_mode="never")
     os.environ[key] = value

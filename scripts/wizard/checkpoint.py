@@ -9,7 +9,14 @@ CHECKPOINT_PATH = None  # set after HOME_DIR is known
 
 def load_checkpoint() -> dict:
     if CHECKPOINT_PATH and CHECKPOINT_PATH.exists():
-        return json.loads(CHECKPOINT_PATH.read_text())
+        data = json.loads(CHECKPOINT_PATH.read_text())
+        changed = "anthropic_key" in data or data.get("step") == "anthropic_key"
+        data.pop("anthropic_key", None)
+        if data.get("step") == "anthropic_key":
+            data["step"] = "openrouter_key"
+        if changed:
+            save_checkpoint(data)
+        return data
     return {"step": "start"}
 
 

@@ -4,13 +4,9 @@ import json
 import logging
 import re
 
-import anthropic
-
-from .usage import log_usage
+from .llm import AsyncOpenRouter
 
 logger = logging.getLogger(__name__)
-
-VALIDATOR_MODEL = "claude-haiku-4-5-20251001"
 
 VALIDATOR_PROMPT = """You are checking a memory entry that {friend_name} is about to save about themselves.
 
@@ -37,7 +33,7 @@ Respond with JSON only:
 
 
 async def validate_memory(
-    client: anthropic.AsyncAnthropic,
+    client: AsyncOpenRouter,
     friend_name: str,
     soul: str,
     proposed_memory: str,
@@ -56,13 +52,13 @@ async def validate_memory(
     )
 
     try:
-        response = await client.messages.create(
-            model=VALIDATOR_MODEL,
+        response = await client.complete(
+            model=client.helper_model,
             max_tokens=200,
+            label="memory_validate",
             messages=[{"role": "user", "content": prompt}],
         )
-        log_usage("memory_validate", VALIDATOR_MODEL, response.usage)
-        raw = response.content[0].text.strip()
+        raw = response.text.strip()
     except Exception as e:
         logger.warning(f"[{friend_name}] memory validator call failed, allowing write: {e}")
         return True, "validator call failed"

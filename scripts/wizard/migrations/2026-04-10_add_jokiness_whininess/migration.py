@@ -5,7 +5,7 @@ friend writes (not whether they write). They compose with the existing
 chattiness dial.
 
 Users get three strategies to pick values:
-  - LLM infer: read each friend's SOUL.md and ask Claude to propose tuned values
+  - LLM infer: read each friend's SOUL.md and ask OpenRouter to propose tuned values
   - Manual: prompt for each friend's values individually
   - Defaults: blanket 0.5 / 0.3 for everyone
 """
@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 
 from wizard.migrations import helpers
+from src.llm import DEFAULT_MODEL
+from wizard.paths import load_env
 
 
 ID = "2026-04-10_add_jokiness_whininess"
@@ -93,11 +95,11 @@ def _apply(friend_path: Path, jokiness: float, whininess: float) -> None:
 
 
 def _run_llm_mode(needing: list) -> bool:
-    """Ask Claude to tune each friend's dials from their SOUL.md, then confirm."""
+    """Ask OpenRouter to tune each friend's dials from their SOUL.md, then confirm."""
     try:
-        import anthropic
+        from wizard.llm import get_client
     except ImportError:
-        print("  anthropic package not available. Falling back to manual mode.")
+        print("  OpenRouter client not available. Falling back to manual mode.")
         for name, path in needing:
             print(f"\n  — {name} —")
             j = helpers.prompt_float("jokiness", default=DEFAULT_JOKINESS)
@@ -105,33 +107,28 @@ def _run_llm_mode(needing: list) -> bool:
             _apply(path, j, w)
         return True
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        # Try loading from ~/.sudomake-friends/.env
-        env_path = Path.home() / ".sudomake-friends" / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("ANTHROPIC_API_KEY="):
-                    api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
-    if not api_key:
-        print("  No ANTHROPIC_API_KEY found. Falling back to defaults.")
+    env_path = needing[0][1].parent.parent / ".env"
+    client = get_client(env_path)
+    if client is None:
+        print("  No OPENROUTER_API_KEY found. Falling back to defaults.")
         for name, path in needing:
             _apply(path, DEFAULT_JOKINESS, DEFAULT_WHININESS)
         return True
 
-    client = anthropic.Anthropic(api_key=api_key)
-
+    model = os.environ.get("OPENROUTER_MODEL") or load_env(env_path).get("OPENROUTER_MODEL") or DEFAULT_MODEL
     proposed = {}
-    for name, path in needing:
-        soul = helpers.load_friend_soul(path)
-        print(f"  Inferring dials for {name}...")
-        result = _llm_call(client, name, soul)
-        if result is None:
-            print(f"    LLM failed for {name}; using defaults.")
-            proposed[name] = (DEFAULT_JOKINESS, DEFAULT_WHININESS, "fallback")
-        else:
-            proposed[name] = result
+    try:
+        for name, path in needing:
+            soul = helpers.load_friend_soul(path)
+            print(f"  Inferring dials for {name}...")
+            result = _llm_call(client, name, soul, model=model)
+            if result is None:
+                print(f"    LLM failed for {name}; using defaults.")
+                proposed[name] = (DEFAULT_JOKINESS, DEFAULT_WHININESS, "fallback")
+            else:
+                proposed[name] = result
+    finally:
+        client.close()
 
     print()
     print("  Proposed values:")
@@ -165,8 +162,8 @@ def _run_llm_mode(needing: list) -> bool:
     return True
 
 
-def _llm_call(client, name: str, soul_text: str):
-    """Ask Claude for tuned (jokiness, whininess) values based on a friend's SOUL."""
+def _llm_call(client, name: str, soul_text: str, *, model: str = DEFAULT_MODEL):
+    """Ask OpenRouter for tuned (jokiness, whininess) values based on a friend's SOUL."""
     prompt = f"""You are tuning personality dials for a character named {name} in a chat app.
 
 Here is their personality:
@@ -184,12 +181,13 @@ Respond with ONLY a JSON object, no fencing:
 {{"jokiness": 0.X, "whininess": 0.Y, "reasoning": "..."}}
 """
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+        response = client.complete(
+            model=model,
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}],
+            label=f"wizard:dials:{name}",
         )
-        text = response.content[0].text.strip()
+        text = response.text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         data = json.loads(text)

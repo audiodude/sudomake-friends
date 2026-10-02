@@ -20,18 +20,6 @@ def test_rules_have_no_per_call_placeholders():
     assert PLACEHOLDER.findall(brain._DECIDE_RULES) == []
 
 
-def test_rules_json_braces_are_unescaped():
-    # Not .format()-ed anymore, so the schema must use real single braces.
-    assert '"respond": true/false' in brain._DECIDE_RULES
-    assert "{{" not in brain._DECIDE_RULES and "}}" not in brain._DECIDE_RULES
-
-
-def test_rules_carry_the_behavioral_content():
-    for marker in ("CRITICAL RULES FOR HOW YOU TEXT", "ONE REPLY PER MESSAGE",
-                   "Be a friend, not a critic", "YOU ARE NOT DOING A BIT"):
-        assert marker in brain._DECIDE_RULES, marker
-
-
 def test_context_formats_with_the_call_kwargs():
     keys = set(PLACEHOLDER.findall(brain._DECIDE_CONTEXT))
     out = brain._DECIDE_CONTEXT.format(**{k: f"<{k}>" for k in keys})

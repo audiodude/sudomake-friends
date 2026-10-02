@@ -8,7 +8,8 @@ from wizard.checkpoint import load_checkpoint, save_checkpoint, clear_checkpoint
 from wizard.friends import get_existing_friend_names
 from wizard.paths import get_paths
 from wizard.steps import (
-    step_anthropic_key,
+    ensure_openrouter_key,
+    step_openrouter_key,
     step_user_profile,
     step_select_friends,
     step_telegram_bots,
@@ -21,8 +22,8 @@ from wizard.steps import (
 HOME_DIR = Path.home() / ".sudomake-friends"
 
 STEPS = {
-    "start": step_anthropic_key,
-    "anthropic_key": step_anthropic_key,
+    "start": step_openrouter_key,
+    "openrouter_key": step_openrouter_key,
     "user_profile": step_user_profile,
     "select_friends": step_select_friends,
     "telegram_bots": step_telegram_bots,
@@ -88,16 +89,6 @@ def main():
 
     print(f"  Data directory: {root}")
 
-    # Step 0: run any pending migrations
-    try:
-        from wizard.migrations import runner as _mig_runner
-        if not _mig_runner.check_and_run_pending(root):
-            print()
-            print("  Wizard halted due to pending mandatory migration.")
-            sys.exit(1)
-    except ImportError as e:
-        print(f"  (Migrations system unavailable: {e})")
-
     cp = load_checkpoint()
 
     # Detect completed setup: .env exists and friends exist
@@ -132,6 +123,20 @@ def main():
         if choice == "s":
             clear_checkpoint()
             cp = {"step": "start"}
+    # Existing installs may be resuming after the credential step, or deploying
+    # directly. Onboard without changing their selected destination or friend data.
+    cp = ensure_openrouter_key(cp, paths)
+
+    # Step 0: run any pending migrations
+    try:
+        from wizard.migrations import runner as _mig_runner
+        if not _mig_runner.check_and_run_pending(root):
+            print()
+            print("  Wizard halted due to pending mandatory migration.")
+            sys.exit(1)
+    except ImportError as e:
+        print(f"  (Migrations system unavailable: {e})")
+
 
     while cp["step"] != "done":
         step_fn = STEPS.get(cp["step"])

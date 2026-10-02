@@ -97,7 +97,9 @@ def _exec_wizard(repo_root: "Path") -> None:
     """Hand off to the wizard package under the repo's uv-managed venv."""
     scripts_dir = repo_root / "scripts"
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(scripts_dir) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(
+        (str(repo_root), str(scripts_dir), env.get("PYTHONPATH", ""))
+    )
     wizard_args = [a for a in sys.argv[1:]]
     cmd = [
         "uv", "run",

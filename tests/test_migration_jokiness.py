@@ -112,20 +112,14 @@ class TestRunManualMode:
 
 class TestRunLLMMode:
     def test_llm_accept_all(self, friends_dir, monkeypatch):
-        # Mock anthropic to return tuned values
-        fake_response = MagicMock()
-        fake_response.content = [MagicMock(text='{"jokiness": 0.7, "whininess": 0.4, "reasoning": "sarcastic"}')]
         fake_client = MagicMock()
-        fake_client.messages.create.return_value = fake_response
-
-        fake_module = MagicMock()
-        fake_module.Anthropic.return_value = fake_client
-        monkeypatch.setitem(sys.modules, "anthropic", fake_module)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        fake_client.complete.return_value.text = '{"jokiness": 0.7, "whininess": 0.4, "reasoning": "sarcastic"}'
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
 
         # llm mode, then accept all
-        with patch("builtins.input", side_effect=["llm", "a"]):
-            assert migration.run(friends_dir, interactive=True) is True
+        with patch("wizard.llm.OpenRouter", return_value=fake_client):
+            with patch("builtins.input", side_effect=["llm", "a"]):
+                assert migration.run(friends_dir, interactive=True) is True
 
         for name in ("alex", "casey"):
             cfg = yaml.safe_load((friends_dir / name / "config.yaml").read_text())
@@ -133,11 +127,7 @@ class TestRunLLMMode:
             assert cfg["whininess"] == 0.4
 
     def test_llm_without_api_key_falls_back_to_defaults(self, friends_dir, monkeypatch):
-        fake_module = MagicMock()
-        monkeypatch.setitem(sys.modules, "anthropic", fake_module)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        # Ensure no .env file is picked up
-        monkeypatch.setattr(Path, "home", lambda: Path("/nonexistent_home_dir_xyz"))
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
         with patch("builtins.input", side_effect=["llm"]):
             assert migration.run(friends_dir, interactive=True) is True

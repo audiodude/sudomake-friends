@@ -9,14 +9,11 @@ import logging
 import re
 import time
 
-import anthropic
+from .llm import AsyncOpenRouter
 
 from .chat_history import load_messages
-from .usage import log_usage
 
 logger = logging.getLogger(__name__)
-
-CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 
 NAG_WINDOW_SECONDS = 60 * 60
 
@@ -34,7 +31,7 @@ If no repeated nags, return {{"nags": []}}"""
 
 
 async def detect_nag_pileons(
-    client: anthropic.AsyncAnthropic,
+    client: AsyncOpenRouter,
     bot_names: set[str],
 ) -> list[dict]:
     """Find topics being nagged about by multiple bots.
@@ -60,13 +57,13 @@ async def detect_nag_pileons(
     )
 
     try:
-        response = await client.messages.create(
-            model=CLASSIFIER_MODEL,
+        response = await client.complete(
+            model=client.helper_model,
             max_tokens=300,
+            label="nag_detect",
             messages=[{"role": "user", "content": CLASSIFY_PROMPT.format(messages=formatted)}],
         )
-        log_usage("nag_detect", CLASSIFIER_MODEL, response.usage)
-        raw = response.content[0].text.strip()
+        raw = response.text.strip()
     except Exception as e:
         logger.warning(f"nag detector call failed, skipping: {e}")
         return []
@@ -91,7 +88,7 @@ async def detect_nag_pileons(
 
 
 async def render_overasked_block(
-    client: anthropic.AsyncAnthropic,
+    client: AsyncOpenRouter,
     bot_names: set[str],
 ) -> str:
     """Format detected nag pile-ons for prompt injection. Empty string if none."""

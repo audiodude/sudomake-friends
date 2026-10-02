@@ -1,3 +1,4 @@
+from getpass import getpass
 import json
 import os
 import shutil
@@ -7,13 +8,13 @@ import tempfile
 from pathlib import Path
 
 from wizard.checkpoint import save_checkpoint, clear_checkpoint
-from wizard.claude import get_client, generate_candidates, compile_profile, MODEL
+from wizard.llm import get_client, generate_candidates, compile_profile
 from wizard.friends import (
     get_existing_friend_names,
     generate_souls_for_selected,
     create_friend_dir,
 )
-from wizard.paths import load_env, set_env_var
+from wizard.paths import load_env, save_env, set_env_var
 from wizard.scraper import get_user_context
 from wizard.selection import run_selection_loop
 from wizard.telegram_setup import collect_bot_token
@@ -21,42 +22,51 @@ from wizard.telegram_setup import collect_bot_token
 TARBALL_URL = "https://github.com/audiodude/sudomake-friends/archive/main.tar.gz"
 
 
-def step_anthropic_key(cp, paths):
-    existing = os.environ.get("ANTHROPIC_API_KEY") or load_env(paths["env"]).get("ANTHROPIC_API_KEY")
+def ensure_openrouter_key(cp, paths):
+    """Persist credentials before any generation or deployment, keeping resume state."""
+    if cp["step"] == "start":
+        cp.pop("resume_step", None)
+    key = os.environ.get("OPENROUTER_API_KEY") or load_env(paths["env"]).get("OPENROUTER_API_KEY")
+    if key:
+        set_env_var(paths["env"], "OPENROUTER_API_KEY", key)
+        return cp
+    if cp["step"] not in ("start", "openrouter_key"):
+        cp["resume_step"] = cp["step"]
+    cp["step"] = "openrouter_key"
+    save_checkpoint(cp)
+    return step_openrouter_key(cp, paths)
+
+
+def step_openrouter_key(cp, paths):
+    existing = os.environ.get("OPENROUTER_API_KEY") or load_env(paths["env"]).get("OPENROUTER_API_KEY")
     if existing:
-        print(f"\n  Anthropic API key found (sk-ant-...{existing[-6:]})")
+        print("\n  OpenRouter API key found.")
         use = input("  Use this key? [Y/n]: ").strip().lower()
         if use in ("", "y", "yes"):
-            os.environ["ANTHROPIC_API_KEY"] = existing
-            cp["step"] = "user_profile"
+            set_env_var(paths["env"], "OPENROUTER_API_KEY", existing)
+            cp["step"] = cp.pop("resume_step", "user_profile")
             save_checkpoint(cp)
             return cp
 
-    print()
-    print("  +-------------------------------------------+")
-    print("  |  Anthropic API Key                        |")
-    print("  +-------------------------------------------+")
-    print("  |  1. Go to console.anthropic.com           |")
-    print("  |  2. Sign in or create an account          |")
-    print("  |  3. Go to Settings > API Keys             |")
-    print("  |  4. Click 'Create Key'                    |")
-    print("  |  5. Copy the key (starts with sk-ant-)    |")
-    print("  +-------------------------------------------+")
-    print()
+    print("\n  OpenRouter API Key")
+    print("  1. Go to https://openrouter.ai/keys")
+    print("  2. Sign in or create an account and add credits.")
+    print("  3. Create a key and copy it (starts with sk-or-).")
+    print("  Key input is hidden.")
 
     while True:
-        key = input("  Paste your API key (or 'q' to quit): ").strip()
+        key = getpass("  Paste your API key (or 'q' to quit): ").strip()
         if key.lower() == "q":
             save_checkpoint(cp)
             print("\n  Progress saved. Run again to resume.")
             sys.exit(0)
-        if key.startswith("sk-ant-"):
-            set_env_var(paths["env"], "ANTHROPIC_API_KEY", key)
+        if key.startswith("sk-or-"):
+            set_env_var(paths["env"], "OPENROUTER_API_KEY", key)
             print("  Saved to .env")
-            cp["step"] = "user_profile"
+            cp["step"] = cp.pop("resume_step", "user_profile")
             save_checkpoint(cp)
             return cp
-        print("  Doesn't look right (should start with sk-ant-). Try again.")
+        print("  Doesn't look right (should start with sk-or-). Try again.")
 
 
 def step_user_profile(cp, paths):
@@ -76,140 +86,138 @@ def step_user_profile(cp, paths):
             save_checkpoint(cp)
             return cp
 
+    ensure_openrouter_key(cp, paths)
     client = get_client(paths["env"])
-    if not client:
-        cp["step"] = "anthropic_key"
-        save_checkpoint(cp)
-        return cp
-
-    def _on_save_sources(sources):
+    try:
+        def _on_save_sources(sources):
+            cp["sources"] = sources
+            save_checkpoint(cp)
+    
+        raw_context, sources = get_user_context(paths,
+                                                 cached_sources=cp.get("sources"),
+                                                 on_save_sources=_on_save_sources)
         cp["sources"] = sources
         save_checkpoint(cp)
-
-    raw_context, sources = get_user_context(paths,
-                                             cached_sources=cp.get("sources"),
-                                             on_save_sources=_on_save_sources)
-    cp["sources"] = sources
-    save_checkpoint(cp)
-
-    print("\n  Compiling your profile...")
-    profile = compile_profile(client, raw_context)
-
-    cp["user_context"] = profile
-    profile_path.write_text(profile)
-    cp["step"] = "select_friends"
-    # Clear cached candidates so friends are regenerated from new profile
-    cp.pop("candidates", None)
-    cp.pop("held_indices", None)
-    save_checkpoint(cp)
-    print("  Done.")
-    print("  Note: You should re-roll your friends to match the new profile.")
-    return cp
+    
+        print("\n  Compiling your profile...")
+        profile = compile_profile(client, raw_context)
+    
+        cp["user_context"] = profile
+        profile_path.write_text(profile)
+        cp["step"] = "select_friends"
+        # Clear cached candidates so friends are regenerated from new profile
+        cp.pop("candidates", None)
+        cp.pop("held_indices", None)
+        save_checkpoint(cp)
+        print("  Done.")
+        print("  Note: You should re-roll your friends to match the new profile.")
+        return cp
+    finally:
+        client.close()
 
 
 def step_select_friends(cp, paths):
+    ensure_openrouter_key(cp, paths)
     client = get_client(paths["env"])
-    if not client:
-        cp["step"] = "anthropic_key"
+    try:
+        user_context = cp["user_context"]
+        existing = get_existing_friend_names(paths["friends"])
+    
+        # If friends already exist, offer to keep or edit them
+        if existing and not cp.get("candidates"):
+            print(f"\n  Current friends: {', '.join(existing)}")
+            keep = input("  Keep these friends? [Y/n/[e]dit]: ").strip().lower()
+            if keep in ("", "y", "yes"):
+                cp["step"] = "telegram_bots"
+                cp["selected"] = [{"name": n} for n in existing]
+                save_checkpoint(cp)
+                return cp
+            elif keep == "e":
+                # Load existing friends as pre-held candidates in the TUI
+                candidates = []
+                for name in existing:
+                    cpath = paths["friends"] / name / "candidate.json"
+                    if cpath.exists():
+                        candidates.append(json.loads(cpath.read_text()))
+                    else:
+                        print(f"  {name} was created before edit support — no candidate data.")
+                        print(f"  Start over to regenerate, or keep as-is.")
+                        cp["step"] = "telegram_bots"
+                        cp["selected"] = [{"name": n} for n in existing]
+                        save_checkpoint(cp)
+                        return cp
+                held_indices = set(range(len(candidates)))
+                # Pad to CANDIDATE_COUNT with new candidates
+                from wizard.llm import CANDIDATE_COUNT
+                n_new = CANDIDATE_COUNT - len(candidates)
+                if n_new > 0:
+                    print(f"\n  Generating {n_new} new candidates...")
+                    new = generate_candidates(client, user_context, candidates,
+                                              existing_friends=existing, count=n_new)
+                    candidates = candidates + new
+                    candidates = candidates[:CANDIDATE_COUNT]
+                cp["candidates"] = candidates
+                cp["held_indices"] = sorted(held_indices)
+                save_checkpoint(cp)
+                # Fall through to the normal selection loop below
+    
+        if cp.get("candidates"):
+            candidates = cp["candidates"]
+            held_indices = set(cp.get("held_indices", []))
+        else:
+            candidates = None
+            held_indices = None
+        if candidates:
+            print(f"\n  Resuming with {len(candidates)} candidates ({len(held_indices)} invited)...")
+    
+        def _on_save(cands, held):
+            cp["candidates"] = cands
+            cp["held_indices"] = sorted(held)
+            save_checkpoint(cp)
+    
+        selected = run_selection_loop(
+            client, user_context,
+            candidates=candidates,
+            held_indices=held_indices if candidates else None,
+            existing_friends=existing,
+            on_save=_on_save,
+        )
+    
+        if selected is None:
+            print("\n  Progress saved. Run again to resume.")
+            sys.exit(0)
+    
+        print(f"\n  Selected {len(selected)} friends:")
+        for c in selected:
+            print(f"    {c['name']} -- {c['vibe']}")
+    
+        if len(selected) > 3:
+            print(f"\n  Warning: You selected {len(selected)} friends.")
+            print(f"  BotFather limits bot creation to ~20 per account and may")
+            print(f"  throttle you if you create too many at once.")
+    
+        def _on_save_soul(name, soul_text):
+            cp.setdefault("souls", {})[name] = soul_text
+            save_checkpoint(cp)
+    
+        souls = generate_souls_for_selected(
+            client, selected, user_context, paths["friends"],
+            cached_souls=cp.get("souls"),
+            on_save_soul=_on_save_soul,
+        )
+    
+        print()
+        for c in selected:
+            slug = create_friend_dir(paths["friends"], c["name"],
+                                      souls[c["name"]], c)
+            print(f"  Created friends/{slug}/")
+    
+        cp["selected"] = selected
+        cp["step"] = "telegram_bots"
         save_checkpoint(cp)
         return cp
-
-    user_context = cp["user_context"]
-    existing = get_existing_friend_names(paths["friends"])
-
-    # If friends already exist, offer to keep or edit them
-    if existing and not cp.get("candidates"):
-        print(f"\n  Current friends: {', '.join(existing)}")
-        keep = input("  Keep these friends? [Y/n/[e]dit]: ").strip().lower()
-        if keep in ("", "y", "yes"):
-            cp["step"] = "telegram_bots"
-            cp["selected"] = [{"name": n} for n in existing]
-            save_checkpoint(cp)
-            return cp
-        elif keep == "e":
-            # Load existing friends as pre-held candidates in the TUI
-            candidates = []
-            for name in existing:
-                cpath = paths["friends"] / name / "candidate.json"
-                if cpath.exists():
-                    candidates.append(json.loads(cpath.read_text()))
-                else:
-                    print(f"  {name} was created before edit support — no candidate data.")
-                    print(f"  Start over to regenerate, or keep as-is.")
-                    cp["step"] = "telegram_bots"
-                    cp["selected"] = [{"name": n} for n in existing]
-                    save_checkpoint(cp)
-                    return cp
-            held_indices = set(range(len(candidates)))
-            # Pad to CANDIDATE_COUNT with new candidates
-            from wizard.claude import CANDIDATE_COUNT
-            n_new = CANDIDATE_COUNT - len(candidates)
-            if n_new > 0:
-                print(f"\n  Generating {n_new} new candidates...")
-                new = generate_candidates(client, user_context, candidates,
-                                          existing_friends=existing, count=n_new)
-                candidates = candidates + new
-                candidates = candidates[:CANDIDATE_COUNT]
-            cp["candidates"] = candidates
-            cp["held_indices"] = sorted(held_indices)
-            save_checkpoint(cp)
-            # Fall through to the normal selection loop below
-
-    if cp.get("candidates"):
-        candidates = cp["candidates"]
-        held_indices = set(cp.get("held_indices", []))
-    else:
-        candidates = None
-        held_indices = None
-    if candidates:
-        print(f"\n  Resuming with {len(candidates)} candidates ({len(held_indices)} invited)...")
-
-    def _on_save(cands, held):
-        cp["candidates"] = cands
-        cp["held_indices"] = sorted(held)
-        save_checkpoint(cp)
-
-    selected = run_selection_loop(
-        client, user_context,
-        candidates=candidates,
-        held_indices=held_indices if candidates else None,
-        existing_friends=existing,
-        on_save=_on_save,
-    )
-
-    if selected is None:
-        print("\n  Progress saved. Run again to resume.")
-        sys.exit(0)
-
-    print(f"\n  Selected {len(selected)} friends:")
-    for c in selected:
-        print(f"    {c['name']} -- {c['vibe']}")
-
-    if len(selected) > 3:
-        print(f"\n  Warning: You selected {len(selected)} friends.")
-        print(f"  BotFather limits bot creation to ~20 per account and may")
-        print(f"  throttle you if you create too many at once.")
-
-    def _on_save_soul(name, soul_text):
-        cp.setdefault("souls", {})[name] = soul_text
-        save_checkpoint(cp)
-
-    souls = generate_souls_for_selected(
-        client, selected, user_context, paths["friends"],
-        cached_souls=cp.get("souls"),
-        on_save_soul=_on_save_soul,
-    )
-
-    print()
-    for c in selected:
-        slug = create_friend_dir(paths["friends"], c["name"],
-                                  souls[c["name"]], c)
-        print(f"  Created friends/{slug}/")
-
-    cp["selected"] = selected
-    cp["step"] = "telegram_bots"
-    save_checkpoint(cp)
-    return cp
+    finally:
+        client.close()
 
 
 def step_telegram_bots(cp, paths):
@@ -381,11 +389,11 @@ RULES:
 
 Write the HISTORY.md directly, no preamble:"""
 
-    response = client.messages.create(
-        model=MODEL, max_tokens=2048,
+    response = client.complete(
+        model=client.generation_model, max_tokens=2048, label="wizard:history",
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return response.text.strip()
 
 
 def step_history(cp, paths):
@@ -423,40 +431,44 @@ def step_history(cp, paths):
         save_checkpoint(cp)
         return cp
 
-    import anthropic
-    client = anthropic.Anthropic(api_key=cp.get("anthropic_key") or os.environ.get("ANTHROPIC_API_KEY"))
-    user_context = cp.get("user_context", "")
-
-    print(f"  Generating shared history for {len(souls)} friends...")
-    history = generate_history(client, souls, user_context)
-
-    if choice == "d":
-        print()
-        print(history)
-        print()
-        action = input("  [w]rite to file, [r]egenerate, or [q] to continue:").strip().lower()
-        while action == "r":
-            print("  Regenerating...")
-            history = generate_history(client, souls, user_context)
+    ensure_openrouter_key(cp, paths)
+    client = get_client(paths["env"])
+    try:
+        user_context = cp.get("user_context", "")
+    
+        print(f"  Generating shared history for {len(souls)} friends...")
+        history = generate_history(client, souls, user_context)
+    
+        if choice == "d":
             print()
             print(history)
             print()
             action = input("  [w]rite to file, [r]egenerate, or [q] to continue:").strip().lower()
-        if action != "w":
-            cp["step"] = "deploy"
-            save_checkpoint(cp)
-            return cp
-
-    history_path.write_text(history)
-    print(f"  Wrote HISTORY.md to {history_path}")
-
-    cp["step"] = "deploy"
-    save_checkpoint(cp)
-    return cp
+            while action == "r":
+                print("  Regenerating...")
+                history = generate_history(client, souls, user_context)
+                print()
+                print(history)
+                print()
+                action = input("  [w]rite to file, [r]egenerate, or [q] to continue:").strip().lower()
+            if action != "w":
+                cp["step"] = "deploy"
+                save_checkpoint(cp)
+                return cp
+    
+        history_path.write_text(history)
+        print(f"  Wrote HISTORY.md to {history_path}")
+    
+        cp["step"] = "deploy"
+        save_checkpoint(cp)
+        return cp
+    finally:
+        client.close()
 
 
 def step_deploy(cp, paths):
     import urllib.request
+    ensure_openrouter_key(cp, paths)
 
     root = paths["root"]
     print()
@@ -523,17 +535,21 @@ def step_deploy(cp, paths):
                        capture_output=True, text=True)
 
         print("  Starting container...")
-        r = subprocess.run([
-            "docker", "run", "-d",
-            "--name", "sudomake-friends",
-            "--env-file", str(paths["env"]),
-            "-v", f"{paths['friends']}:/app/friends-data",
-            "-v", f"{data_dir}:/app/data",
-            "-e", "FRIENDS_DIR=/app/friends-data",
-            "-e", "DATA_DIR=/app/data",
-            "--restart", "unless-stopped",
-            "sudomake-friends",
-        ], capture_output=True, text=True)
+        # Docker's env-file parser keeps dotenv quotes literal. Render decoded
+        # values outside the build context, with private temporary-file permissions.
+        with tempfile.NamedTemporaryFile(prefix="sudomake-docker-env-") as docker_env:
+            save_env(Path(docker_env.name), load_env(paths["env"]))
+            r = subprocess.run([
+                "docker", "run", "-d",
+                "--name", "sudomake-friends",
+                "--env-file", docker_env.name,
+                "-v", f"{paths['friends']}:/app/friends-data",
+                "-v", f"{data_dir}:/app/data",
+                "-e", "FRIENDS_DIR=/app/friends-data",
+                "-e", "DATA_DIR=/app/data",
+                "--restart", "unless-stopped",
+                "sudomake-friends",
+            ], capture_output=True, text=True)
 
         if r.returncode == 0:
             print("  Running! Check logs with:")

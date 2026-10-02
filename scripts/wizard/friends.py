@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from wizard.claude import generate_soul
+from wizard.llm import generate_soul
 
 
 def generate_souls_for_selected(

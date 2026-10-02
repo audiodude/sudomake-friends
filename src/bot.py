@@ -5,7 +5,7 @@ import logging
 import random
 import time
 
-import anthropic
+from .llm import AsyncOpenRouter, DEFAULT_MODEL
 from telegram import Bot, Update
 from telegram.error import TelegramError
 
@@ -25,11 +25,11 @@ class FriendBot:
     """A single friend bot instance."""
 
     def __init__(self, name: str, config: dict, global_config: dict,
-                 claude: anthropic.AsyncAnthropic):
+                 llm: AsyncOpenRouter):
         self.name = name
         self.config = config
         self.global_config = global_config
-        self.claude = claude
+        self.llm = llm
         self.bot = Bot(token=config["telegram_token"])
         self.group_chat_id = int(global_config["group_chat_id"])
         self._bot_user_id: int | None = None
@@ -91,10 +91,11 @@ class FriendGroup:
 
     def __init__(self):
         self.global_config = load_config()
-        self.claude = anthropic.AsyncAnthropic(
-            api_key=self.global_config["anthropic_api_key"]
+        self.llm = AsyncOpenRouter(
+            api_key=self.global_config.get("openrouter_api_key", ""),
+            helper_model=self.global_config.get("helper_model"),
         )
-        self.model = self.global_config.get("model", "claude-sonnet-5")
+        self.model = self.global_config.get("model") or DEFAULT_MODEL
         self.bots: dict[str, FriendBot] = {}
         self._bot_user_ids: set[int] = set()
         self._last_update_id: int = 0
@@ -185,12 +186,23 @@ class FriendGroup:
             if not config.get("telegram_token"):
                 logger.warning(f"Skipping {name} — no telegram token configured")
                 continue
-            bot = FriendBot(name, config, self.global_config, self.claude)
+            bot = FriendBot(name, config, self.global_config, self.llm)
             await bot.init()
             self.bots[name] = bot
             self._bot_user_ids.add(bot.user_id)
 
         logger.info(f"Ready with {len(self.bots)} friends")
+
+    async def aclose(self):
+        """Stop in-flight responses before closing the shared LLM client."""
+        tasks = set(self._active_tasks.values())
+        for task in tasks:
+            task.cancel()
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            await self.llm.aclose()
 
     def _select_poll_bot(self) -> "FriendBot":
         """Pick the single bot that reads all group messages for everyone.
@@ -226,12 +238,18 @@ class FriendGroup:
         logger.info("Starting message polling...")
 
         # Run polling, initiation, catchup, and news concurrently
-        await asyncio.gather(
-            self._poll_loop(poll_bot, poll_interval),
-            self._initiation_loop(),
-            self._catchup_loop(),
-            self._news_loop(),
-        )
+        tasks = [
+            asyncio.create_task(self._poll_loop(poll_bot, poll_interval)),
+            asyncio.create_task(self._initiation_loop()),
+            asyncio.create_task(self._catchup_loop()),
+            asyncio.create_task(self._news_loop()),
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _poll_loop(self, poll_bot, poll_interval):
         """Poll Telegram for new messages."""
@@ -326,7 +344,7 @@ class FriendGroup:
                 logger.info(f"{name} considering starting a conversation (quiet for {silence_minutes}min, {hours_since_human:.1f}h since human, decay={decay:.2f})...")
 
                 result = await maybe_initiate(
-                    client=self.claude,
+                    client=self.llm,
                     model=self.model,
                     friend_name=name,
                     friend_config=friend_config,
@@ -421,7 +439,7 @@ class FriendGroup:
                     logger.info(f"{mention.friend_name} catching up on mention from {mention.sender}")
 
                     result = await think_and_respond(
-                        client=self.claude,
+                        client=self.llm,
                         model=self.model,
                         friend_name=mention.friend_name,
                         sender=mention.sender,
@@ -696,7 +714,7 @@ class FriendGroup:
         # Periodically compact chat history
         chat_config = self.global_config.get("chat", {})
         await maybe_compact(
-            self.claude, self.model,
+            self.llm, self.model,
             max_messages=chat_config.get("max_messages", 100),
             compact_to=chat_config.get("compact_to", 30),
         )
@@ -710,13 +728,13 @@ class FriendGroup:
         After each bot sends, remaining bots get a fresh LLM call to reconsider
         their response in light of what was just said.
         """
+        think_tasks = {}
         try:
             # Phase 1: Everyone thinks at once
-            think_tasks = {}
             for name, bot, friend_config in responders:
                 think_tasks[name] = asyncio.create_task(
                     think_and_respond(
-                        client=self.claude,
+                        client=self.llm,
                         model=self.model,
                         friend_name=name,
                         sender=sender,
@@ -751,7 +769,7 @@ class FriendGroup:
                     logger.info(f"{name} reconsidering after another bot responded...")
                     try:
                         result = await think_and_respond(
-                            client=self.claude,
+                            client=self.llm,
                             model=self.model,
                             friend_name=name,
                             sender=sender,
@@ -793,6 +811,10 @@ class FriendGroup:
         except asyncio.CancelledError:
             logger.info("Staggered responses cancelled — new message arrived")
         finally:
+            for task in think_tasks.values():
+                task.cancel()
+            if think_tasks:
+                await asyncio.gather(*think_tasks.values(), return_exceptions=True)
             for name, _, _ in responders:
                 self._active_tasks.pop(name, None)
 
@@ -803,7 +825,7 @@ class FriendGroup:
         """Have one friend consider and optionally respond to a message."""
         try:
             result = await think_and_respond(
-                client=self.claude,
+                client=self.llm,
                 model=self.model,
                 friend_name=name,
                 sender=sender,

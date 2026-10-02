@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import logging
 
-import anthropic
+from .llm import AsyncOpenRouter
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,6 @@ from .topics import (
     record_complaint,
 )
 from .news import load_friend_news
-from .usage import log_usage
 from .memory_validator import validate_memory
 from .nag_detector import render_overasked_block
 
@@ -76,7 +75,7 @@ _DECIDE_CONTEXT, _DECIDE_RULES = _split_cached_prompt(_load_prompt("decide_and_r
 
 
 async def think_and_respond(
-    client: anthropic.AsyncAnthropic,
+    client: AsyncOpenRouter,
     model: str,
     friend_name: str,
     sender: str,
@@ -152,11 +151,12 @@ async def think_and_respond(
     if image_bytes and image_media_type:
         content = [
             {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": image_media_type,
-                    "data": base64.standard_b64encode(image_bytes).decode("ascii"),
+                "type": "image_url",
+                "image_url": {
+                    "url": (
+                        f"data:{image_media_type};base64,"
+                        + base64.standard_b64encode(image_bytes).decode("ascii")
+                    ),
                 },
             },
             {"type": "text", "text": prompt},
@@ -164,21 +164,21 @@ async def think_and_respond(
     else:
         content = prompt
 
-    response = await client.messages.create(
+    response = await client.complete(
         model=model,
         max_tokens=1024,
-        # Keep thinking off: models like Sonnet 5 default it ON, which makes
-        # content[0] an (empty) thinking block and breaks the JSON parse below.
-        thinking={"type": "disabled"},
-        # The rules block is identical across friends/turns — cache it so the
-        # ~6K-token prefix is billed at ~10% on reads instead of full price.
-        system=[{"type": "text", "text": _DECIDE_RULES,
-                 "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": content}],
+        label=f"decide:{friend_name}",
+        messages=[
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": _DECIDE_RULES,
+                             "cache_control": {"type": "ephemeral"}}],
+            },
+            {"role": "user", "content": content},
+        ],
     )
-    log_usage(f"decide:{friend_name}", model, response.usage)
 
-    raw = response.content[0].text.strip()
+    raw = response.text.strip()
 
     # Parse JSON — handle potential markdown fencing
     if raw.startswith("```"):
@@ -254,7 +254,7 @@ INITIATE_PROMPT = _load_prompt("initiate.md")
 
 
 async def maybe_initiate(
-    client: anthropic.AsyncAnthropic,
+    client: AsyncOpenRouter,
     model: str,
     friend_name: str,
     friend_config: dict,
@@ -351,15 +351,14 @@ async def maybe_initiate(
         freshness_note=freshness_note,
     )
 
-    response = await client.messages.create(
+    response = await client.complete(
         model=model,
         max_tokens=512,
-        thinking={"type": "disabled"},  # see note in think_and_respond
+        label=f"initiate:{friend_name}",
         messages=[{"role": "user", "content": prompt}],
     )
-    log_usage(f"initiate:{friend_name}", model, response.usage)
 
-    raw = response.content[0].text.strip()
+    raw = response.text.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 

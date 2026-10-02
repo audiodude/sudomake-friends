@@ -11,7 +11,7 @@ These compose with the existing `chattiness` dial and are rendered into each fri
 
 When you run the migration interactively you'll see three options:
 
-- **llm**: read each friend's `SOUL.md` and ask Claude to propose tuned values with a one-line reason. You can accept all, edit individually, or cancel. Requires `ANTHROPIC_API_KEY`.
+- **llm**: read each friend's `SOUL.md` and ask OpenRouter to propose tuned values with a one-line reason. You can accept all, edit individually, or cancel. Requires `OPENROUTER_API_KEY` from the environment or the install's `.env`. Uses `OPENROUTER_MODEL` when set, otherwise the app's default conversation model.
 - **manual**: prompt you for each friend's values one by one.
 - **defaults**: set everyone to `jokiness=0.5`, `whininess=0.3`.
 

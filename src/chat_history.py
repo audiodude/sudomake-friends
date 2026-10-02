@@ -5,10 +5,9 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-import anthropic
+from .llm import AsyncOpenRouter
 
 from .config import DATA_DIR
-from .usage import log_usage
 
 CHAT_PATH = DATA_DIR / "CHAT.jsonl"
 CHAT_SUMMARY_PATH = DATA_DIR / "CHAT_SUMMARY.md"
@@ -109,7 +108,7 @@ def get_chat_context(limit: int = 50) -> str:
     return "\n".join(parts) if parts else "(No chat history yet)"
 
 
-async def maybe_compact(client: anthropic.AsyncAnthropic, model: str,
+async def maybe_compact(client: AsyncOpenRouter, model: str,
                         max_messages: int = 100, compact_to: int = 30):
     """If chat log exceeds max_messages, summarize old messages and trim."""
     if not CHAT_PATH.exists():
@@ -149,15 +148,14 @@ New messages to summarize:
 
 Write a concise summary (max 500 words). Focus on what would be useful context for future conversations."""
 
-    response = await client.messages.create(
+    response = await client.complete(
         model=model,
         max_tokens=1024,
-        thinking={"type": "disabled"},  # keep content[0] the summary text, not a thinking block
+        label="compact",
         messages=[{"role": "user", "content": prompt}],
     )
-    log_usage("compact", model, response.usage)
 
-    summary = response.content[0].text
+    summary = response.text
     CHAT_SUMMARY_PATH.write_text(summary)
 
     # Rewrite chat log with only recent messages
