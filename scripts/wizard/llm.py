@@ -3,20 +3,24 @@ import os
 from pathlib import Path
 
 from wizard.axes import sample_profiles, render_profile
-from wizard.paths import load_env
+from src.llm import OpenRouter
+from wizard.paths import load_env, set_env_var
 
-MODEL = "claude-opus-4-8"
 CANDIDATE_COUNT = 8
 SCRAPE_TIMEOUT = 180
 
 
 def get_client(env_path: Path):
-    import anthropic
-    key = os.environ.get("ANTHROPIC_API_KEY") or load_env(env_path).get("ANTHROPIC_API_KEY")
+    env = load_env(env_path)
+    key = os.environ.get("OPENROUTER_API_KEY") or env.get("OPENROUTER_API_KEY")
     if not key:
         return None
-    os.environ["ANTHROPIC_API_KEY"] = key
-    return anthropic.Anthropic(api_key=key)
+    set_env_var(env_path, "OPENROUTER_API_KEY", key)
+    return OpenRouter(
+        api_key=key,
+        generation_model=os.environ.get("OPENROUTER_GENERATION_MODEL") or env.get("OPENROUTER_GENERATION_MODEL"),
+        helper_model=os.environ.get("OPENROUTER_HELPER_MODEL") or env.get("OPENROUTER_HELPER_MODEL"),
+    )
 
 
 def generate_candidates(client, context: str, held: list[dict],
@@ -84,11 +88,11 @@ candidate ONLY as they/them — never he/she/him/her.
 
 JSON array only, no markdown fencing:"""
 
-    response = client.messages.create(
-        model=MODEL, max_tokens=4096,
+    response = client.complete(
+        model=client.generation_model, max_tokens=4096, label="wizard:candidates",
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = response.content[0].text.strip()
+    raw = response.text.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     candidates = json.loads(raw)
@@ -231,11 +235,11 @@ you've known for years — you know their coffee order, that they hate cilantro,
 they call their mom every Sunday. The Speech Patterns section should make it possible
 to distinguish this character's messages from any other character at a glance."""
 
-    response = client.messages.create(
-        model=MODEL, max_tokens=4096,
+    response = client.complete(
+        model=client.generation_model, max_tokens=4096, label=f"wizard:soul:{candidate['name']}",
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return response.text.strip()
 
 
 def compile_profile(client, raw_context: str) -> str:
@@ -268,8 +272,8 @@ Raw content:
 
 Write the profile directly, no preamble:"""
 
-    response = client.messages.create(
-        model=MODEL, max_tokens=1024,
+    response = client.complete(
+        model=client.generation_model, max_tokens=1024, label="wizard:profile",
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return response.text.strip()

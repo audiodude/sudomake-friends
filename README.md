@@ -19,7 +19,7 @@ You need [git](https://git-scm.com/downloads), [uv](https://docs.astral.sh/uv/),
 uv run https://raw.githubusercontent.com/audiodude/sudomake-friends/main/scripts/initialize.py
 ```
 
-That's it. One command. The wizard walks you through everything. Quit anytime — it checkpoints your progress:
+That's it. One command. The wizard walks you through everything, starting with an [OpenRouter API key](https://openrouter.ai/keys). Quit anytime — it checkpoints your progress:
 
 1. **Profile** — Tell the wizard about yourself (URLs, files, or just type). It auto-detects 14 platforms.
 2. **Friends** — Browse generated candidates in a TUI. Hold the ones you like, re-roll the rest.
@@ -28,6 +28,24 @@ That's it. One command. The wizard walks you through everything. Quit anytime �
 5. **Deploy** — Docker builds and runs automatically.
 
 All your data lives in `~/.sudomake-friends/`. Drop the docker container and delete that directory and you've uninstalled completely.
+
+### API access and models
+
+All model calls go through OpenRouter. The wizard saves `OPENROUTER_API_KEY` in `~/.sudomake-friends/.env`. Existing installs need a new OpenRouter key; an Anthropic key cannot be reused. Re-running the wizard preserves your friends and memories and resumes setup after collecting the new key.
+
+The defaults retain the existing Claude models. To select different models, set these optional overrides in the same `.env` file:
+
+```dotenv
+OPENROUTER_MODEL=anthropic/claude-sonnet-5
+OPENROUTER_HELPER_MODEL=anthropic/claude-haiku-4.5
+OPENROUTER_GENERATION_MODEL=anthropic/claude-opus-4.8
+```
+
+These select the conversation, background, and friend-generation models respectively. Use full OpenRouter model IDs, such as `openai/gpt-6-luna`, rather than bare model names. Choose models that support text responses with reasoning disabled; the conversation model should also support images. Environment overrides take precedence over the runtime defaults in `config.yaml`.
+
+After changing runtime credentials or models, rebuild and restart from your local checkout with `docker compose up --build -d`. Changing the generation model affects future generation, not existing friends. Prompts are sent through OpenRouter to the provider serving your selected model; review your OpenRouter privacy settings before using personal context.
+
+The wizard accepts quoted `.env` values and passes a private, temporary unquoted copy to Docker outside the image build context. If you use `docker run --env-file` yourself, omit wrapping quotes in that file: Docker treats them as literal characters.
 
 ### Other commands
 
@@ -86,7 +104,7 @@ If you're running from the published URL, the wizard keeps a cached checkout at 
 When you send a message in the group:
 
 1. Each bot checks their **schedule** — are they awake? At work? Day off? A random roll against their chattiness determines if they're "around". Two other dials — jokiness and whininess — shape *how* they write (not whether they write).
-2. Bots that pass the gate get a Claude call with their personality + memory + chat history, and decide whether to respond
+2. Bots that pass the gate get a model call through OpenRouter with their personality + memory + chat history, and decide whether to respond
 3. They wait a realistic delay before sending — sometimes splitting thoughts across multiple messages
 4. Important facts get saved to their memory for future conversations
 5. Old chat history is periodically summarized to keep context manageable
@@ -168,13 +186,13 @@ The version at the top of this README is cosmetic — no build-time or runtime m
 ## FAQ
 
 **How much does it cost?**
-Each response is one Claude API call (~$0.003-0.01). News headlines are fetched via RSS (free, no LLM calls). A quiet group might cost $1-2/month; an active one $5-10/month.
+Costs depend on the models you choose and how busy the group is, including when you're away. [OpenRouter Activity](https://openrouter.ai/activity) shows billed usage; container logs include per-call token usage and returned charges. A missing charge is logged as unknown, not free. News headlines are fetched via RSS without model charges.
 
 **Can I change a friend's personality?**
 Edit `~/.sudomake-friends/friends/<name>/SOUL.md`. It's just markdown. Restart the container to pick up changes.
 
 **Why do my friends sound like AI?**
-The prompt engineering fights hard against this, but sometimes Claude gonna Claude. Edit the Speech Patterns section of their SOUL.md to be more specific.
+The prompt engineering fights hard against this, but models still have their quirks. Edit the Speech Patterns section of their SOUL.md to be more specific.
 
 **What's `work_type` in the config?**
 `"office"` means they can sneak a text at work. `"physical"` means they mostly can't. Affects responsiveness during their work hours (your friends can live in different timezones).

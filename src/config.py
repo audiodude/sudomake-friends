@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from .llm import DEFAULT_HELPER_MODEL, DEFAULT_MODEL
+
 ROOT = Path(__file__).resolve().parent.parent
 FRIENDS_DIR = Path(os.environ.get("FRIENDS_DIR", str(ROOT / "friends")))
 # Persistent data dir — use volume mount if available, else project root
@@ -40,7 +42,14 @@ def load_config() -> dict:
     config_path = ROOT / "config.yaml"
     with open(config_path) as f:
         raw = yaml.safe_load(f)
-    return _resolve_dict(raw)
+    config = _resolve_dict(raw)
+    config["model"] = os.environ.get("OPENROUTER_MODEL") or config.get("model") or DEFAULT_MODEL
+    config["helper_model"] = (
+        os.environ.get("OPENROUTER_HELPER_MODEL")
+        or config.get("helper_model")
+        or DEFAULT_HELPER_MODEL
+    )
+    return config
 
 
 # Group-chat activity tuning. These are the structural knobs behind how chatty

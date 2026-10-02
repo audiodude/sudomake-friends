@@ -1,6 +1,6 @@
 import curses
 
-from wizard.claude import CANDIDATE_COUNT, generate_candidates
+from wizard.llm import CANDIDATE_COUNT, generate_candidates
 from wizard.editor import candidate_to_text, edit_with_editor, text_to_candidate
 from wizard.tui import selection_ui
 

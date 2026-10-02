@@ -28,14 +28,17 @@ async def run():
     logger.info("Starting Sudomake Friends...")
 
     group = FriendGroup()
-    await group.setup()
+    try:
+        await group.setup()
 
-    if not group.bots:
-        logger.error("No bots configured! Add friends to friends/ directory.")
-        sys.exit(1)
+        if not group.bots:
+            logger.error("No bots configured! Add friends to friends/ directory.")
+            sys.exit(1)
 
-    logger.info(f"Running with {len(group.bots)} friends. Polling for messages...")
-    await group.poll_and_respond()
+        logger.info(f"Running with {len(group.bots)} friends. Polling for messages...")
+        await group.poll_and_respond()
+    finally:
+        await group.aclose()
 
 
 def main():

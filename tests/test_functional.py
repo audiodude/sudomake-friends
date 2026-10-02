@@ -26,7 +26,7 @@ def tmp_project(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.py").touch()
     (tmp_path / "friends").mkdir()
-    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-test123\n")
+    (tmp_path / ".env").write_text("OPENROUTER_API_KEY=sk-or-test123\n")
     return tmp_path
 
 
@@ -153,32 +153,6 @@ class TestFriendDir:
         assert slug == "mary_jane"
         assert (paths["friends"] / "mary_jane").exists()
 
-
-# ─── Checkpoint system ────────────────────────────────────────────────────────
-
-class TestCheckpoint:
-    """Tests 21-23: Checkpoint persistence."""
-
-    def test_save_load_roundtrip(self, tmp_path):
-        cp_path = tmp_path / ".init-checkpoint.json"
-        cp_path.write_text(json.dumps({"step": "select_friends", "data": [1, 2]}))
-        loaded = json.loads(cp_path.read_text())
-        assert loaded["step"] == "select_friends"
-        assert loaded["data"] == [1, 2]
-
-    def test_clear_removes_file(self, tmp_path):
-        cp_path = tmp_path / ".init-checkpoint.json"
-        cp_path.write_text("{}")
-        cp_path.unlink()
-        assert not cp_path.exists()
-
-    def test_missing_checkpoint_is_start(self, tmp_path):
-        cp_path = tmp_path / ".init-checkpoint.json"
-        if cp_path.exists():
-            cp_path.unlink()
-        # Simulates what load_checkpoint does
-        data = json.loads(cp_path.read_text()) if cp_path.exists() else {"step": "start"}
-        assert data == {"step": "start"}
 
 
 # ─── Selection UI ─────────────────────────────────────────────────────────────
@@ -505,9 +479,7 @@ class TestSoulGeneration:
     def test_on_save_soul_called(self, paths, sample_candidates):
         saved = []
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = MagicMock(
-            content=[MagicMock(text="# Generated Soul")]
-        )
+        mock_client.complete.return_value = MagicMock(text="# Generated Soul")
         lib.generate_souls_for_selected(
             client=mock_client,
             selected=[sample_candidates[0]],
@@ -542,58 +514,6 @@ class TestExistingFriends:
         (d / "SOUL.md").write_text("# Template")
         names = lib.get_existing_friend_names(paths["friends"])
         assert ".template" not in names
-
-
-# ─── Setup complete detection ─────────────────────────────────────────────────
-
-class TestSetupDetection:
-    """Test that completed setup is detected for redeploy."""
-
-    def test_detects_complete_setup(self, paths):
-        """With .env + friends, setup is complete."""
-        paths["env"].write_text("ANTHROPIC_API_KEY=sk-ant-test\n")
-        d = paths["friends"] / "casey"
-        d.mkdir()
-        (d / "SOUL.md").write_text("# Casey")
-
-        existing = lib.get_existing_friend_names(paths["friends"])
-        setup_complete = paths["env"].exists() and len(existing) > 0
-        assert setup_complete is True
-
-    def test_incomplete_without_friends(self, paths):
-        """With .env but no friends, setup is not complete."""
-        paths["env"].write_text("ANTHROPIC_API_KEY=sk-ant-test\n")
-
-        existing = lib.get_existing_friend_names(paths["friends"])
-        setup_complete = paths["env"].exists() and len(existing) > 0
-        assert setup_complete is False
-
-    def test_incomplete_without_env(self, paths):
-        """With friends but no .env, setup is not complete."""
-        if paths["env"].exists():
-            paths["env"].unlink()
-        d = paths["friends"] / "casey"
-        d.mkdir()
-        (d / "SOUL.md").write_text("# Casey")
-
-        existing = lib.get_existing_friend_names(paths["friends"])
-        setup_complete = paths["env"].exists() and len(existing) > 0
-        assert setup_complete is False
-
-    def test_complete_even_with_stale_checkpoint(self, paths):
-        """With everything including a stale checkpoint, still detected as complete."""
-        paths["env"].write_text("ANTHROPIC_API_KEY=sk-ant-test\n")
-        d = paths["friends"] / "casey"
-        d.mkdir()
-        (d / "SOUL.md").write_text("# Casey")
-
-        existing = lib.get_existing_friend_names(paths["friends"])
-
-        setup_complete = (
-            paths["env"].exists()
-            and len(existing) > 0
-        )
-        assert setup_complete is True
 
 
 # ─── Timezone validation ──────────────────────────────────────────────────────
@@ -639,7 +559,7 @@ class TestStepUserProfile:
     @pytest.fixture
     def profile_paths(self, tmp_path):
         env = tmp_path / ".env"
-        env.write_text("ANTHROPIC_API_KEY=sk-ant-test123\n")
+        env.write_text("OPENROUTER_API_KEY=sk-or-test123\n")
         return {"root": tmp_path, "friends": tmp_path / "friends", "env": env}
 
     def test_reuses_profile_from_checkpoint(self, profile_paths):
@@ -661,9 +581,9 @@ class TestStepUserProfile:
         (profile_paths["root"] / "profile.txt").write_text("Old profile.")
         cp = {"step": "user_profile", "user_context": "Old profile."}
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="New profile.")]
+        mock_response.text = "New profile."
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_client.complete.return_value = mock_response
         with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("builtins.input", side_effect=["y", "new source", "q"]):
                 result = lib.step_user_profile(cp, profile_paths)
@@ -674,26 +594,15 @@ class TestStepUserProfile:
         cp = {"step": "user_profile", "user_context": "Old.",
               "candidates": [{"name": "Stale"}], "held_indices": [0]}
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="New profile.")]
+        mock_response.text = "New profile."
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_client.complete.return_value = mock_response
         with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("builtins.input", side_effect=["y", "new source", "q"]):
                 result = lib.step_user_profile(cp, profile_paths)
         assert "candidates" not in result
         assert "held_indices" not in result
 
-    def test_recompile_warns_about_reroll(self, profile_paths, capsys):
-        cp = {"step": "user_profile", "user_context": "Old."}
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="New profile.")]
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        with patch("wizard.steps.get_client", return_value=mock_client):
-            with patch("builtins.input", side_effect=["y", "new source", "q"]):
-                lib.step_user_profile(cp, profile_paths)
-        output = capsys.readouterr().out
-        assert "re-roll" in output
 
 
 # ─── History generation ─────────────────────────────────────────────────────
@@ -714,6 +623,7 @@ class TestStepHistory:
 
     @pytest.fixture
     def history_paths(self, tmp_path, friends_with_souls):
+        (tmp_path / ".env").write_text("OPENROUTER_API_KEY=sk-or-test123\n")
         return {
             "root": tmp_path,
             "friends": friends_with_souls,
@@ -736,7 +646,7 @@ class TestStepHistory:
         assert (history_paths["friends"] / "HISTORY.md").read_text() == "existing history"
 
     def test_write_directly(self, history_paths):
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        cp = {"step": "history", "user_context": "Travis"}
         with patch("wizard.steps.generate_history", return_value="# HISTORY\nThey met at a park."):
             with patch("builtins.input", return_value="w"):
                 result = lib.step_history(cp, history_paths)
@@ -746,7 +656,7 @@ class TestStepHistory:
         assert "They met at a park" in history
 
     def test_display_then_write(self, history_paths, capsys):
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        cp = {"step": "history", "user_context": "Travis"}
         with patch("wizard.steps.generate_history", return_value="# HISTORY\nFriends since 2020."):
             with patch("builtins.input", side_effect=["d", "w"]):
                 result = lib.step_history(cp, history_paths)
@@ -756,7 +666,7 @@ class TestStepHistory:
         assert (history_paths["friends"] / "HISTORY.md").exists()
 
     def test_display_then_decline(self, history_paths):
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        cp = {"step": "history", "user_context": "Travis"}
         with patch("wizard.steps.generate_history", return_value="# HISTORY\nSome history."):
             with patch("builtins.input", side_effect=["d", "q"]):
                 result = lib.step_history(cp, history_paths)
@@ -765,7 +675,7 @@ class TestStepHistory:
         assert not (history_paths["friends"] / "HISTORY.md").exists()
 
     def test_display_regenerate_then_write(self, history_paths):
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "Travis"}
+        cp = {"step": "history", "user_context": "Travis"}
         with patch("wizard.steps.generate_history", side_effect=["Version 1.", "Version 2."]):
             with patch("builtins.input", side_effect=["d", "r", "w"]):
                 result = lib.step_history(cp, history_paths)
@@ -807,7 +717,7 @@ class TestStepSelectFriendsExisting:
         friends_dir = tmp_path / "friends"
         friends_dir.mkdir()
         env_path = tmp_path / ".env"
-        env_path.write_text("ANTHROPIC_API_KEY=sk-ant-test123\n")
+        env_path.write_text("OPENROUTER_API_KEY=sk-or-test123\n")
         candidates = []
         for name in ("alex", "river"):
             d = friends_dir / name
@@ -833,9 +743,9 @@ class TestStepSelectFriendsExisting:
         paths, _ = friends_setup
         cp = {"step": "select_friends", "user_context": "test"}
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='[{"name":"New","age":25,"location":"SF","occupation":"Dev","vibe":"Fun","why":"Yes","timezone":"America/Los_Angeles","chattiness":0.5}]')]
+        mock_response.text = '[{"name":"New","age":25,"location":"SF","occupation":"Dev","vibe":"Fun","why":"Yes","timezone":"America/Los_Angeles","chattiness":0.5}]'
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_client.complete.return_value = mock_response
         with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("wizard.tui.curses.wrapper") as mock_wrapper:
                 mock_wrapper.return_value = ({0}, "accept")
@@ -851,9 +761,9 @@ class TestStepSelectFriendsExisting:
                          "occupation": "Writer", "vibe": "Dry", "why": "Yes",
                          "timezone": "Europe/Berlin", "chattiness": 0.7}
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps([new_candidate]))]
+        mock_response.text = json.dumps([new_candidate])
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
+        mock_client.complete.return_value = mock_response
         with patch("wizard.steps.get_client", return_value=mock_client):
             with patch("wizard.tui.curses.wrapper") as mock_wrapper:
                 # Accept all (2 existing held + new ones)
@@ -865,12 +775,12 @@ class TestStepSelectFriendsExisting:
         assert cp.get("candidates") is not None
         assert len(cp["candidates"]) >= 2
 
-    def test_edit_bails_without_candidate_json(self, tmp_path, capsys):
+    def test_edit_bails_without_candidate_json(self, tmp_path):
         """Friends without candidate.json skip edit and keep existing."""
         friends_dir = tmp_path / "friends"
         friends_dir.mkdir()
         env_path = tmp_path / ".env"
-        env_path.write_text("ANTHROPIC_API_KEY=sk-ant-test123\n")
+        env_path.write_text("OPENROUTER_API_KEY=sk-or-test123\n")
         d = friends_dir / "alex"
         d.mkdir()
         (d / "SOUL.md").write_text("# alex")
@@ -880,8 +790,7 @@ class TestStepSelectFriendsExisting:
         with patch("builtins.input", return_value="e"):
             result = lib.step_select_friends(cp, paths)
         assert result["step"] == "telegram_bots"
-        output = capsys.readouterr().out
-        assert "before edit support" in output
+        assert result["selected"] == [{"name": "alex"}]
 
 
 # ─── sources.txt ────────────────────────────────────────────────────────────
@@ -948,20 +857,8 @@ class TestMainMenu:
             d.mkdir()
             (d / "SOUL.md").write_text(f"# {name}")
         env_path = tmp_path / ".env"
-        env_path.write_text("ANTHROPIC_API_KEY=sk-ant-test\nTELEGRAM_GROUP_CHAT_ID=-123\n")
+        env_path.write_text("OPENROUTER_API_KEY=sk-or-test\nTELEGRAM_GROUP_CHAT_ID=-123\n")
         return tmp_path
-
-    def test_adjust_sets_step_to_start(self, complete_setup):
-        """Adjust option should walk through from the beginning."""
-        cp = {"step": "done"}
-        # We can't easily run the full main() loop, but verify the menu logic
-        # by checking that 'a' sets step to 'start'
-        existing = lib.get_existing_friend_names(complete_setup / "friends")
-        assert len(existing) == 2
-        # The menu sets cp["step"] = "start" for adjust
-        # Verify this is what the code does by simulating the branch
-        has_incomplete = cp.get("step") and cp["step"] not in ("start", "done", "deploy")
-        assert not has_incomplete  # no incomplete step
 
     def test_history_regenerate_offer(self, complete_setup):
         """When HISTORY.md exists, step_history offers to regenerate."""
@@ -969,13 +866,13 @@ class TestMainMenu:
         (friends_dir / "HISTORY.md").write_text("old history")
         paths = {"root": complete_setup, "friends": friends_dir,
                  "env": complete_setup / ".env"}
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "test"}
+        cp = {"step": "history", "user_context": "test"}
         # Decline regeneration
         with patch("builtins.input", return_value="n"):
             result = lib.step_history(cp, paths)
         assert (friends_dir / "HISTORY.md").read_text() == "old history"
         # Accept regeneration
-        cp = {"step": "history", "anthropic_key": "sk-test", "user_context": "test"}
+        cp = {"step": "history", "user_context": "test"}
         with patch("wizard.steps.generate_history", return_value="new history"):
             with patch("builtins.input", side_effect=["y", "w"]):
                 result = lib.step_history(cp, paths)

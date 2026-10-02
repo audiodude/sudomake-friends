@@ -22,7 +22,7 @@ def _fake_bot(name, can_read):
 
 
 def _group_with(bots):
-    g = FriendGroup.__new__(FriendGroup)  # skip the heavy __init__ (config + Anthropic client)
+    g = FriendGroup.__new__(FriendGroup)  # skip the heavy __init__ (config + LLM client)
     g.bots = {b.name: b for b in bots}
     return g
 

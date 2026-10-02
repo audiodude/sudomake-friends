@@ -43,11 +43,12 @@ BOT_NAMES = {"alex", "casey", "emery", "river"}
 
 
 def _mock_client(nags: list[dict]):
-    """Build a mock Anthropic client that returns the given nags."""
+    """Build a mock client that returns the given nags."""
     client = AsyncMock()
+    client.helper_model = "anthropic/claude-haiku-4.5"
     response = MagicMock()
-    response.content = [MagicMock(text=json.dumps({"nags": nags}))]
-    client.messages.create.return_value = response
+    response.text = json.dumps({"nags": nags})
+    client.complete.return_value = response
     return client
 
 
@@ -57,7 +58,7 @@ class TestNagDetector:
         client = _mock_client([])
         result = asyncio.run(detect_nag_pileons(client, BOT_NAMES))
         assert result == []
-        client.messages.create.assert_not_called()
+        client.complete.assert_not_called()
 
     def test_few_messages_skips_llm_call(self, chat_dir):
         _write_chat(chat_dir, [
@@ -68,7 +69,7 @@ class TestNagDetector:
         client = _mock_client([])
         result = asyncio.run(detect_nag_pileons(client, BOT_NAMES))
         assert result == []
-        client.messages.create.assert_not_called()
+        client.complete.assert_not_called()
 
     def test_pile_on_detected(self, chat_dir):
         _write_chat(chat_dir, [
@@ -97,7 +98,7 @@ class TestNagDetector:
         client = _mock_client([])
         result = asyncio.run(detect_nag_pileons(client, BOT_NAMES))
         assert result == []
-        client.messages.create.assert_not_called()
+        client.complete.assert_not_called()
 
     def test_human_messages_excluded(self, chat_dir):
         _write_chat(chat_dir, [
@@ -109,7 +110,7 @@ class TestNagDetector:
         client = _mock_client([])
         result = asyncio.run(detect_nag_pileons(client, BOT_NAMES))
         assert result == []
-        client.messages.create.assert_not_called()
+        client.complete.assert_not_called()
 
     def test_single_speaker_nag_filtered_out(self, chat_dir):
         _write_chat(chat_dir, [
@@ -132,7 +133,7 @@ class TestNagDetector:
         ])
         from src.nag_detector import detect_nag_pileons
         client = AsyncMock()
-        client.messages.create.side_effect = Exception("API down")
+        client.complete.side_effect = Exception("API down")
         result = asyncio.run(detect_nag_pileons(client, BOT_NAMES))
         assert result == []
 

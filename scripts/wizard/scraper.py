@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from wizard.claude import SCRAPE_TIMEOUT
+from wizard.llm import SCRAPE_TIMEOUT
 from wizard.platforms import PLATFORMS, detect_platform
 
 
