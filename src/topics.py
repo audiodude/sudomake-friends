@@ -13,6 +13,7 @@ TTL_HOURS = 24
 
 
 def _append(kind: str, sender: str, value: str):
+    _read_fresh(prune=True)
     timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M")
     line = f"{timestamp} [{kind}] {sender}: {value}\n"
     with open(TOPICS_PATH, "a") as f:
@@ -32,8 +33,8 @@ def record_complaint(sender: str, complaint: str):
     _append("complaint", sender, complaint)
 
 
-def _read_fresh() -> list[tuple[str, str, str]]:
-    """Return fresh entries as list of (kind, sender, value). Prunes stale entries."""
+def _read_fresh(*, prune: bool = False) -> list[tuple[str, str, str]]:
+    """Return fresh (kind, sender, value) entries; prune only when committing."""
     if not TOPICS_PATH.exists():
         return []
 
@@ -66,22 +67,22 @@ def _read_fresh() -> list[tuple[str, str, str]]:
         except (ValueError, IndexError):
             continue
 
-    if len(fresh_lines) != len(lines):
+    if prune and len(fresh_lines) != len(lines):
         TOPICS_PATH.write_text("\n".join(fresh_lines) + "\n" if fresh_lines else "")
 
     return parsed
 
 
-def get_recent_topics() -> str:
-    entries = [f"- {s}: {v}" for k, s, v in _read_fresh() if k == "topic"]
+def get_recent_topics(*, prune: bool = False) -> str:
+    entries = [f"- {s}: {v}" for k, s, v in _read_fresh(prune=prune) if k == "topic"]
     return "\n".join(entries)
 
 
-def get_recent_joke_formats() -> str:
-    entries = [f"- {s}: {v}" for k, s, v in _read_fresh() if k == "joke"]
+def get_recent_joke_formats(*, prune: bool = False) -> str:
+    entries = [f"- {s}: {v}" for k, s, v in _read_fresh(prune=prune) if k == "joke"]
     return "\n".join(entries)
 
 
-def get_recent_complaints() -> str:
-    entries = [f"- {s}: {v}" for k, s, v in _read_fresh() if k == "complaint"]
+def get_recent_complaints(*, prune: bool = False) -> str:
+    entries = [f"- {s}: {v}" for k, s, v in _read_fresh(prune=prune) if k == "complaint"]
     return "\n".join(entries)

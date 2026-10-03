@@ -10,3 +10,4 @@ build/
 .scrape-cache/
 CLAUDE.md
 TODO.md
+.agents/

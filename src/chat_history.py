@@ -89,8 +89,8 @@ def last_message_age_seconds() -> float | None:
     return time.time() - last_ts
 
 
-def get_chat_context(limit: int = 50) -> str:
-    """Build a chat context string for the LLM, including summary if available."""
+def get_chat_context(limit: int = 50, *, messages: list[ChatMessage] | None = None) -> str:
+    """Render a supplied snapshot (or recent log) with summary and reply senders."""
     parts = []
 
     if CHAT_SUMMARY_PATH.exists():
@@ -98,7 +98,8 @@ def get_chat_context(limit: int = 50) -> str:
         if summary:
             parts.append(f"## Earlier conversation summary\n{summary}\n")
 
-    messages = load_messages(limit)
+    if messages is None:
+        messages = load_messages(limit)
     if messages:
         by_id = {m.message_id: m for m in messages if m.message_id}
         parts.append("## Recent messages")
