@@ -97,3 +97,31 @@ def test_tier_and_cache_write_price_ceiling_is_not_lowest_advertised_price():
                                         "overrides": [{"prompt": "0.000004", "completion": "0.000015", "input_cache_write": "0.000005"}]}})
     assert rates.prompt == 0.00001
     assert rates.completion == 0.00003
+
+
+def test_writer_draft_preserves_atoms_without_fabricating_a_social_decision():
+    snapshot = case()
+    snapshot["output_contract"] = "writer_plaintext_v1"
+    raw = "That glaze looks great\nI'd keep the blue one"
+
+    async def scenario():
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json={
+            "choices": [{"finish_reason": "stop", "message": {"content": raw}}],
+            "usage": {"cost": 0.001},
+        }))
+        async with httpx.AsyncClient(base_url="https://gateway.invalid/", transport=transport) as client:
+            return await request_one(client, snapshot, payload_for(snapshot, MODELS[0], Rates(.000002, .00001)))
+
+    result = asyncio.run(scenario())
+    assert result["status"] == "ok"
+    assert result["parsed"] == {"messages": ["That glaze looks great", "I'd keep the blue one"]}
+    assert result["raw"] == raw
+    assert result["cost"] == 0.001
+
+
+@pytest.mark.parametrize("raw", [
+    "", '{"respond":false}', "```text\nHello\n```", "one\ntwo\nthree\nfour\nfive",
+])
+def test_invalid_writer_output_is_not_silence(raw):
+    with pytest.raises(ValueError):
+        parse_output(raw, "reply", "writer_plaintext_v1")

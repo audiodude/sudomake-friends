@@ -1,5 +1,6 @@
 # Sudomake Friends Configuration
 openrouter_api_key: "${OPENROUTER_API_KEY}"
+# This model is only for chat-history compaction; Jev and Luna are pinned.
 model: "anthropic/claude-sonnet-5"
 helper_model: "anthropic/claude-haiku-4.5"
 

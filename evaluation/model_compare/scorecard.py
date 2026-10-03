@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from .report import _write_private
+from .report import _decision, _writer_draft, _write_private
 from .runner import MODELS
 
 ANCHORS = {
@@ -40,13 +40,15 @@ def scoring_data(cases: list[dict], records: list[dict], reveal: dict) -> dict:
             record = by_case[case_id].get(labels[label])
             parsed = record.get("parsed") if record else None
             valid = record is not None and record.get("status") == "ok" and isinstance(parsed, dict)
-            decision = parsed.get("send" if case["kind"] == "initiate" else "respond") if valid else None
-            if type(decision) is not bool:
-                valid = False
+            writer = _writer_draft(case, record) if record else False
+            decision = _decision(case, record) if record else None
+            valid = valid and (writer or type(decision) is bool)
             if record is None:
                 status = "Not attempted; not a silence decision"
             elif not valid:
                 status = "Format error; not a silence decision" if record.get("error_type") == "format" else "Request/completion error; not a silence decision"
+            elif writer:
+                status = "Writer draft (Jev acceptance assumed; no social decision evaluated)"
             else:
                 status = ("Initiate" if case["kind"] == "initiate" else "Reply") if decision else "Silence (explicit false)"
             text = ""

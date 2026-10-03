@@ -26,9 +26,20 @@ def _block(value) -> str:
 def _decision(case: dict, record: dict):
     if record.get("status") != "ok" or not isinstance(record.get("parsed"), dict):
         return None
+    if case.get("output_contract") == "writer_plaintext_v1":
+        return None
     key = "send" if case["kind"] == "initiate" else "respond"
     value = record["parsed"].get(key)
     return value if isinstance(value, bool) else None
+
+
+def _writer_draft(case: dict, record: dict) -> bool:
+    if case.get("output_contract") != "writer_plaintext_v1" or record.get("status") != "ok":
+        return False
+    parsed = record.get("parsed")
+    messages = parsed.get("messages") if isinstance(parsed, dict) else None
+    return (isinstance(messages, list) and 1 <= len(messages) <= 4
+            and all(isinstance(text, str) and text.strip() for text in messages))
 
 
 def _render_result(case: dict, record: dict | None) -> list[str]:
@@ -37,17 +48,20 @@ def _render_result(case: dict, record: dict | None) -> list[str]:
     if record.get("status") != "ok":
         category = "Format error" if record.get("error_type") == "format" else "Request/completion error"
         lines = [
-            f"**{category}:** no valid decision; this is not silence.",
+            f"**{category}:** no valid output; this is not silence.",
             "Error details are withheld from the blind report to avoid identifying the provider or model.",
             "",
         ]
         if record.get("raw") or record.get("error_type") == "format":
             lines += ["**Raw completion** (unaltered):", _block(record.get("raw", "")), ""]
         return lines
+    if _writer_draft(case, record):
+        return ["**Writer draft:** Jev acceptance is assumed; no social decision was evaluated.", "",
+                "**Proposed messages** (not sent):", _block(record["parsed"]["messages"]), ""]
     parsed = record.get("parsed")
     decision = _decision(case, record)
     if decision is None:
-        lines = ["**Format error:** no valid boolean decision; this is not silence.", ""]
+        lines = ["**Format error:** no valid output under this case's contract; this is not silence.", ""]
     elif decision:
         lines = [f"**Decision:** {'initiate' if case['kind'] == 'initiate' else 'reply'}.", ""]
     else:
@@ -88,7 +102,8 @@ def _model_metrics(cases: list[dict], model: str, by_case: dict) -> dict:
                           for status in ("ok", "error")},
         "error_count": sum(record.get("status") != "ok" for record in records),
         "format_error_count": sum(record.get("error_type") == "format"
-                                  or (record.get("status") == "ok" and _decision(case, record) is None)
+                                  or (record.get("status") == "ok"
+                                      and _decision(case, record) is None and not _writer_draft(case, record))
                                   for case, record in attempts),
         "missing_result_count": len(cases) - len(records),
         "cost_total": sum(costs) if records and not unknown_costs else None,
@@ -101,6 +116,7 @@ def _model_metrics(cases: list[dict], model: str, by_case: dict) -> dict:
         },
         "response_count": sum(decision is True for decision in decisions),
         "silence_count": sum(decision is False for decision in decisions),
+        "writer_draft_count": sum(_writer_draft(case, record) for case, record in attempts),
         "usage": usage,
     }
 
@@ -144,6 +160,9 @@ def write_report(output_dir: Path, cases: list[dict], records: list[dict]) -> No
         "the same model across cases. Keep reveal.json and metrics.json closed while comparing.", "",
         "Input excerpts below are abbreviated. For the complete context, personality, and saved "
         "memory used by each candidate, consult that case's frozen messages in cases.json.", "",
+        "Cases marked writer_plaintext_v1 compare conditional writing only: Jev acceptance is "
+        "assumed, metadata extraction is omitted, and drafts are not counted as social decisions. "
+        "Archived combined-JSON snapshots retain their original decision contract.", "",
         "Historical chat context uses **current memories**, not historical reconstruction: "
         "later knowledge may leak into older cases. Scheduling gates, echo filters, and helper "
         "validation are not tested. Messages, reactions, and memory changes are proposals only; "

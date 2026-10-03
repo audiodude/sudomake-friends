@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from src.llm import BASE_URL
+from src.brain import _parse_atoms
 
 MODELS = (
     "anthropic/claude-sonnet-5",
@@ -82,7 +83,12 @@ def reserve_cost(payload: dict, rates: Rates) -> float:
     return (len(encoded) + 4096) * rates.prompt + payload["max_tokens"] * rates.completion
 
 
-def parse_output(raw: str, kind: str) -> dict:
+def parse_output(raw: str, kind: str, output_contract: str = "combined_json") -> dict:
+    if output_contract == "writer_plaintext_v1":
+        return {"messages": [atom.text for atom in _parse_atoms(raw)]}
+    if output_contract != "combined_json":
+        raise ValueError("Unknown frozen output contract.")
+    # Historical frozen cases retain their original combined-JSON contract.
     text = raw.strip()
     if text.startswith("```") and "\n" in text:
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -149,7 +155,8 @@ async def request_one(client: httpx.AsyncClient, case: dict, payload: dict) -> d
         if not record["raw"].strip():
             raise ValueError("Gateway returned no text.")
         record["error_type"] = "format"
-        record["parsed"] = parse_output(record["raw"], case["kind"])
+        record["parsed"] = parse_output(record["raw"], case["kind"],
+                                        case.get("output_contract", "combined_json"))
         record["status"] = "ok"
         record["error_type"] = None
     except httpx.HTTPError:

@@ -87,6 +87,10 @@ class _CaptureClient:
     def __init__(self, expected_label: str):
         self.expected_label = expected_label
 
+    async def decide(self, **kwargs):
+        # Capture the conditional writer stage, not Jev's live social judgment.
+        return True
+
     async def complete(self, *, messages: list[dict], max_tokens: int, label: str, **kwargs):
         if label != self.expected_label:
             raise RuntimeError(f"Unexpected helper request during capture: {label}")
@@ -348,9 +352,6 @@ def _select(snapshot: _Snapshot, count: int) -> list[_Scenario]:
     return result
 
 
-def _forbid_mutation(*args, **kwargs):
-    raise RuntimeError("Runtime mutation is forbidden during offline prompt capture")
-
 
 async def _no_nag_classifier(*args, **kwargs) -> str:
     return ""
@@ -371,7 +372,7 @@ async def _capture(snapshot: _Snapshot, scenario: _Scenario) -> dict:
         if timestamp - TTL_HOURS * 3600 < recorded_at and available_at <= timestamp:
             current_topics[kind].append(f"- {sender}: {value}")
     frozen_datetime = _frozen_datetime(timestamp)
-    label = f"{'decide' if scenario.kind == 'reply' else 'initiate'}:{friend.name}"
+    label = f"write:{friend.name}"
     dependencies = {
         "load_friend_soul": lambda name: friend.soul,
         "load_friend_memory": lambda name: friend.memory,
@@ -385,11 +386,6 @@ async def _capture(snapshot: _Snapshot, scenario: _Scenario) -> dict:
         "last_message_age_seconds": lambda: timestamp - prior[-1].timestamp if prior else None,
         "load_messages": lambda limit=100: list(prior[-limit:]),
         "validate_memory": _forbid_helper,
-        "save_friend_memory": _forbid_mutation,
-        "_update_memory": _forbid_mutation,
-        "record_topic": _forbid_mutation,
-        "record_joke_format": _forbid_mutation,
-        "record_complaint": _forbid_mutation,
     }
     with ExitStack() as stack:
         for name, replacement in dependencies.items():
@@ -397,19 +393,18 @@ async def _capture(snapshot: _Snapshot, scenario: _Scenario) -> dict:
         stack.enter_context(patch.object(chat_history, "load_messages", lambda limit=100: list(prior[-limit:])))
         stack.enter_context(patch.object(chat_history, "CHAT_SUMMARY_PATH", snapshot.summary.at(timestamp)))
         stack.enter_context(patch.object(schedule, "datetime", frozen_datetime))
-        # maybe_initiate imports datetime inside the function, unlike schedule.
-        stack.enter_context(patch("datetime.datetime", frozen_datetime))
+        stack.enter_context(patch.object(brain, "datetime", frozen_datetime))
         context_excerpt = chat_history.get_chat_context(limit=12)
         client = _CaptureClient(label)
         try:
             if scenario.kind == "reply":
                 await brain.think_and_respond(
-                    client, "offline-capture", friend.name, trigger.sender,
+                    client, friend.name, trigger.sender,
                     trigger.text, trigger.message_id, friend.settings,
                 )
             else:
                 await brain.maybe_initiate(
-                    client, "offline-capture", friend.name, friend.settings, scenario.silence_minutes,
+                    client, friend.name, friend.settings, scenario.silence_minutes,
                 )
         except _PromptCaptured as captured:
             messages = captured.messages
@@ -417,7 +412,7 @@ async def _capture(snapshot: _Snapshot, scenario: _Scenario) -> dict:
         else:
             raise ValueError(f"No prompt produced for {scenario.kind} case for {friend.name}; check the historical schedule.")
 
-    identity = f"{scenario.kind}\0{friend.name}\0{timestamp!r}\0{trigger.message_id}\0{trigger.sender}\0{trigger.text}"
+    identity = f"writer_plaintext_v1\0{scenario.kind}\0{friend.name}\0{timestamp!r}\0{trigger.message_id}\0{trigger.sender}\0{trigger.text}"
     case_id = f"{scenario.kind}-{friend.name}-{hashlib.sha256(identity.encode()).hexdigest()[:16]}"
     if scenario.kind == "reply":
         excerpt = f"{context_excerpt}\n\nLatest message from {trigger.sender} [msg:{trigger.message_id}]: {trigger.text}"
@@ -443,12 +438,13 @@ async def _capture(snapshot: _Snapshot, scenario: _Scenario) -> dict:
             "Nag-classifier context is omitted for every model: no historical classifier output is stored and no helper calls are made.",
             "Only retained CHAT.jsonl text is replayed; images and fetched link previews are not reconstructed. Reactions are context, never reply triggers.",
             "Initiations are opportunities at the end of real logged quiet gaps, immediately before the next event; they are not claims that a bot actually attempted an initiation then.",
-            "Probability gates are not replayed; these cases compare the runtime LLM decision prompts, not end-to-end chat frequency.",
+            "Jev acceptance is forced only to capture the conditional writer stage. Social decisions, probability gates, and metadata extraction are not evaluated.",
         ],
     }
     # Check serializability and detach mutable request blocks from runtime locals.
     return json.loads(json.dumps({
         "case_id": case_id, "kind": scenario.kind, "friend": friend.name,
+        "output_contract": "writer_plaintext_v1",
         "timestamp": timestamp, "input_excerpt": excerpt,
         "messages": messages, "max_tokens": max_tokens, "metadata": metadata,
     }, allow_nan=False))
