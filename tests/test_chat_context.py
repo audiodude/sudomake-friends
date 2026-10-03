@@ -82,3 +82,37 @@ class TestGetChatContextWiring:
         assert "jordan" in out
         assert "what do you mean" in out
         assert "replying to msg:100" not in out
+
+    def test_supplied_snapshot_renders_exact_messages_with_summary_and_threading(self, tmp_path):
+        chat = tmp_path / "CHAT.jsonl"
+        chat.write_text(json.dumps(vars(_msg(sender="LiveOnly", text="not in this snapshot", message_id=999))) + "\n")
+        summary = tmp_path / "CHAT_SUMMARY.md"
+        summary.write_text("Earlier they planned a pottery show.")
+        snapshot = [
+            _msg(message_id=100, sender="jordan", text="boxes are not progress"),
+            _msg(message_id=101, sender="Travis", text="what do you mean", reply_to=100),
+            _msg(message_id=0, sender="robin", text="reaction", reply_to=101, is_reaction=True),
+        ]
+        with patch.object(chat_history, "CHAT_PATH", chat), \
+             patch.object(chat_history, "CHAT_SUMMARY_PATH", summary):
+            out = get_chat_context(limit=1, messages=snapshot)
+
+        assert "Earlier they planned a pottery show." in out
+        assert "[msg:100][jordan]: boxes are not progress" in out
+        assert 'replying to jordan: "boxes are not progress"' in out
+        assert "what do you mean" in out
+        assert 'robin reacted reaction to Travis: "what do you mean"' in out
+        assert "LiveOnly" not in out
+        assert "not in this snapshot" not in out
+
+    def test_empty_supplied_snapshot_does_not_fall_back_to_live_messages(self, tmp_path):
+        chat = tmp_path / "CHAT.jsonl"
+        chat.write_text(json.dumps(vars(_msg(text="live chat is not empty"))) + "\n")
+        summary = tmp_path / "CHAT_SUMMARY.md"
+        summary.write_text("Earlier they planned a pottery show.")
+        with patch.object(chat_history, "CHAT_PATH", chat), \
+             patch.object(chat_history, "CHAT_SUMMARY_PATH", summary):
+            out = get_chat_context(messages=[])
+
+        assert "Earlier they planned a pottery show." in out
+        assert "live chat is not empty" not in out

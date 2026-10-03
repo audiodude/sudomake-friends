@@ -132,6 +132,8 @@ class FriendGroup:
         self._active_tasks: dict[str, asyncio.Task] = {}
         # Includes cancelled/replaced operations until their cancellation drains.
         self._response_tasks: set[asyncio.Task] = set()
+        # Only initiation/staggered tasks own routing; catchups serve one friend.
+        self._bot_routing_tasks: set[asyncio.Task] = set()
 
     def _cancel_responses(self):
         """Invalidate every current opportunity without stopping periodic loops."""
@@ -139,16 +141,20 @@ class FriendGroup:
             if not task.done():
                 task.cancel()
         self._active_tasks.clear()
+        self._bot_routing_tasks.clear()
 
     def _release_response_task(self, names, task):
         for name in names:
             if self._active_tasks.get(name) is task:
                 self._active_tasks.pop(name)
 
-    def _start_response_task(self, names, operation):
+    def _start_response_task(self, names, operation, *, owns_bot_routing: bool):
         task = asyncio.create_task(operation)
         self._response_tasks.add(task)
         task.add_done_callback(self._response_tasks.discard)
+        if owns_bot_routing:
+            self._bot_routing_tasks.add(task)
+            task.add_done_callback(self._bot_routing_tasks.discard)
         names = tuple(names)
         for name in names:
             self._active_tasks[name] = task
@@ -452,6 +458,7 @@ class FriendGroup:
                 task = self._start_response_task(
                     [name],
                     self._initiate(name, bot, friend_config, silence_minutes),
+                    owns_bot_routing=True,
                 )
                 await self._await_response_task(task)
 
@@ -501,6 +508,7 @@ class FriendGroup:
                     self._staggered_responses(
                         responders, name, sent[0].text, sent[0].message_id,
                     ),
+                    owns_bot_routing=True,
                 )
         except asyncio.CancelledError:
             logger.info("%s's initiation cancelled — new message or shutdown", name)
@@ -562,6 +570,7 @@ class FriendGroup:
                     task = self._start_response_task(
                         [mention.friend_name],
                         self._catch_up(mention, bot, friend_config),
+                        owns_bot_routing=False,
                     )
                     if not await self._await_response_task(task):
                         # A new human invalidates the whole current catchup pass.
@@ -771,12 +780,11 @@ class FriendGroup:
                     self._record_replied_to(prev_msg.sender)
                 break  # only check the most recent prior message
 
-        # If a bot message arrives while a staggered flow is already running,
-        # Don't cancel it: later speakers build fresh context at their own turn.
-        # Only create a new response chain for bot messages when idle (e.g. initiations).
-        has_active_flow = any(not t.done() for t in self._active_tasks.values())
+        # Initiations schedule their own responders; staggered flows refresh at
+        # each turn. Catchups do neither, so they must not suppress idle friends.
+        has_active_flow = any(not task.done() for task in self._bot_routing_tasks)
         if is_bot_message and has_active_flow:
-            logger.info(f"Bot message from {sender_name} while staggered flow active — letting flow handle it")
+            logger.info(f"Bot message from {sender_name} while response flow active — letting flow handle it")
             return
 
 
@@ -785,6 +793,10 @@ class FriendGroup:
         responders = []
         for name, bot in self.bots.items():
             if is_bot_message and bot.user_id == sender_id:
+                continue
+
+            active = self._active_tasks.get(name)
+            if active is not None and not active.done():
                 continue
 
             friend_config = load_friend_config(name)
@@ -825,6 +837,7 @@ class FriendGroup:
                     responders, sender_name, display_text, message.message_id,
                     media=media,
                 ),
+                owns_bot_routing=True,
             )
 
         # Periodically compact chat history

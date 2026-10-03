@@ -15,6 +15,8 @@ Each friend has their own personality, backstory, persistent memory, timezone-aw
 
 Friends now pair **Jev** with **GPT-6 Luna** for conversation and photo understanding, keeping their personalities, shared history, and memories. Memories and conversation tracking now reflect what a friend actually sent, not something they drafted and never said.
 
+Catch-up replies can bring other friends back into the conversation. Texts with times and measurements stay intact, and friends keep their place when messages arrive mid-thought. Sent messages remain part of the conversation even if a memory update cannot be saved.
+
 Existing OpenRouter installs keep the same API key and friend data. Conversation models are fixed for this release; background and friend-generation model choices remain configurable.
 
 ## What's new in 3.0.0

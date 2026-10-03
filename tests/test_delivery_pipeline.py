@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from telegram.error import TelegramError
 
-from src import bot, chat_history, config, topics
+from src import bot, chat_history, config, reply as reply_module, topics
 from src.chat_history import ChatMessage
 from src.reply import PreparedReply, ReplyAtom, ReplyEffect
 
@@ -76,6 +76,7 @@ def delivery(tmp_path, monkeypatch):
     group._bot_user_ids = set()
     group._active_tasks = {}
     group._response_tasks = set()
+    group._bot_routing_tasks = set()
     group._pending_mentions = []
     group._engagement = {}
     next_id = 1000
@@ -291,7 +292,9 @@ def test_human_cancellation_preserves_first_atom_effects_and_engagement(
             effect("joke_format", "unsent joke", (1,)),
             effect("complaint_topic", "partial joint complaint", (0, 1)),
         ))
-        task = group._start_response_task(["alex"], group._send_messages(alex, "alex", reply))
+        task = group._start_response_task(
+            ["alex"], group._send_messages(alex, "alex", reply), owns_bot_routing=True,
+        )
         await asyncio.wait_for(typing.wait(), 2)
         assert "I already said this" in config.load_friend_memory("alex")
         assert group._engagement["alex"]["streak"] == 1
@@ -306,6 +309,7 @@ def test_human_cancellation_preserves_first_atom_effects_and_engagement(
         ]
         assert group._active_tasks == {}
         assert group._response_tasks == set()
+        assert group._bot_routing_tasks == set()
 
     asyncio.run(scenario())
 
@@ -358,9 +362,11 @@ def test_human_cancels_each_stage_without_stopping_periodic_owner(
         if stage == "delivery":
             alex.bot.send_message.side_effect = blocked_send
         if path == "normal":
-            owner = group._start_response_task(["alex"], group._staggered_responses(
-                [("alex", alex, {})], "human", "Original message", 1,
-            ))
+            owner = group._start_response_task(
+                ["alex"], group._staggered_responses(
+                    [("alex", alex, {})], "human", "Original message", 1,
+                ), owns_bot_routing=True,
+            )
         elif path == "initiation":
             owner = asyncio.create_task(group._initiation_loop())
         else:
@@ -378,6 +384,7 @@ def test_human_cancels_each_stage_without_stopping_periodic_owner(
                 await asyncio.wait_for(resumed.wait(), 2)
                 assert not owner.done()
             assert group._active_tasks == {}
+            assert group._bot_routing_tasks == set()
             assert config.load_friend_memory("alex") == ""
             assert topics.get_recent_topics() == ""
             assert "alex" not in group._engagement
@@ -414,9 +421,11 @@ def test_old_cancelled_flow_cannot_unregister_new_replacement(delivery, monkeypa
             await asyncio.Event().wait()
 
         monkeypatch.setattr(bot, "think_and_respond", think)
-        old = group._start_response_task(["alex"], group._staggered_responses(
-            [("alex", alex, {})], "human", "Original message", 1,
-        ))
+        old = group._start_response_task(
+            ["alex"], group._staggered_responses(
+                [("alex", alex, {})], "human", "Original message", 1,
+            ), owns_bot_routing=True,
+        )
         await asyncio.wait_for(old_started.wait(), 2)
         monkeypatch.setattr(bot, "should_respond", lambda *args, **kwargs: True)
         await group._handle_message(incoming())
@@ -460,7 +469,9 @@ def test_shared_photo_is_described_once_and_retained_for_queued_catchup(delivery
         assert len(group._pending_mentions) == 1
         mention = group._pending_mentions[0]
         assert mention.friend_name == "river"
-        catchup = group._start_response_task(["river"], group._catch_up(mention, river, {}))
+        catchup = group._start_response_task(
+            ["river"], group._catch_up(mention, river, {}), owns_bot_routing=False,
+        )
         await catchup
         description.assert_awaited_once_with(group.llm, b"jpeg image", "image/jpeg")
         alex.bot.get_file.assert_awaited_once_with("largest-photo")
@@ -562,6 +573,7 @@ def test_bot_message_during_flow_is_visible_but_does_not_cancel_or_redraft(deliv
         group = delivery.group
         alex = delivery.add_friend("alex")
         river = delivery.add_friend("river")
+        casey = delivery.add_friend("casey")
         started = asyncio.Event()
         calls = []
 
@@ -571,15 +583,21 @@ def test_bot_message_during_flow_is_visible_but_does_not_cancel_or_redraft(deliv
             await asyncio.Event().wait()
 
         monkeypatch.setattr(bot, "think_and_respond", think)
-        task = group._start_response_task(["alex"], group._staggered_responses(
-            [("alex", alex, {})], "human", "Original message", 1,
-        ))
+        monkeypatch.setattr(bot, "should_respond", lambda *args, **kwargs: True)
+        task = group._start_response_task(
+            ["alex"], group._staggered_responses(
+                [("alex", alex, {})], "human", "Original message", 1,
+            ), owns_bot_routing=True,
+        )
         await asyncio.wait_for(started.wait(), 2)
-        await group._handle_message(incoming(text="River chimed in", sender_id=river.user_id))
+        await group._handle_message(incoming(
+            text="@river_bot, what do you think?", sender_id=casey.user_id,
+        ))
         assert group._active_tasks["alex"] is task
         assert not task.done()
         assert calls == ["alex"]
-        assert chat_history.load_messages()[-1].sender == "river"
+        river.bot.send_message.assert_not_awaited()
+        assert chat_history.load_messages()[-1].sender == "casey"
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
@@ -623,7 +641,9 @@ def test_initiation_uses_prepared_reply_and_triggers_fresh_bot_responses(deliver
             return prepared(("I want to see the glaze",), reply_to=kwargs["message_id"])
 
         monkeypatch.setattr(bot, "think_and_respond", think)
-        task = group._start_response_task(["alex"], group._initiate("alex", alex, {}, 12))
+        task = group._start_response_task(
+            ["alex"], group._initiate("alex", alex, {}, 12), owns_bot_routing=True,
+        )
         await task
         if group._active_tasks:
             await asyncio.gather(*set(group._active_tasks.values()))
@@ -671,3 +691,275 @@ def test_catchup_retains_known_thread_after_recent_history_compaction(delivery, 
     assert alex.bot.send_message.call_args.kwargs["reply_to_message_id"] == 500
     assert "I caught up on the earlier plan" in config.load_friend_memory("alex")
     assert delivery.delays == [3]
+
+
+def test_topic_failure_preserves_visible_delivery_and_independent_memory(
+    delivery, monkeypatch, caplog,
+):
+    group = delivery.group
+    alex = delivery.add_friend("alex")
+    river = delivery.add_friend("river")
+    alex.bot.send_message.side_effect = [
+        SimpleNamespace(message_id=10), TelegramError("second atom rejected"),
+    ]
+    first_reply = prepared(("I finished my bowl", "I will buy a kiln"), effects=(
+        effect("topic", "pottery progress", (0,)),
+        effect("memory", "I finished my bowl", (0,)),
+        effect("joke_format", "visible pottery joke", (0,)),
+        effect("memory", "I will buy a kiln", (1,)),
+        effect("topic", "unsent kiln plan", (1,)),
+        effect("complaint_topic", "requires both texts", (0, 1)),
+    ))
+    calls = []
+
+    def fail_topic(*args):
+        raise OSError("topic storage unavailable")
+
+    async def think(**kwargs):
+        name = kwargs["friend_name"]
+        calls.append(name)
+        if name == "alex":
+            return first_reply
+        assert [message.text for message in chat_history.load_messages()] == [
+            "Original message", "I finished my bowl",
+        ]
+        assert config.load_friend_memory("alex").count("I finished my bowl") == 1
+        assert "I will buy a kiln" not in config.load_friend_memory("alex")
+        assert "visible pottery joke" in topics.get_recent_joke_formats()
+        assert topics.get_recent_topics() == ""
+        assert topics.get_recent_complaints() == ""
+        assert group._engagement["alex"]["streak"] == 1
+        return prepared(("I want to see the glaze",))
+
+    monkeypatch.setattr(reply_module, "record_topic", fail_topic)
+    monkeypatch.setattr(bot, "think_and_respond", think)
+    asyncio.run(group._staggered_responses(
+        [("alex", alex, {}), ("river", river, {})], "human", "Original message", 1,
+    ))
+    assert calls == ["alex", "river"]
+    assert [message.text for message in chat_history.load_messages()][1:] == [
+        "I finished my bowl", "I want to see the glaze",
+    ]
+    assert delivery.delays == [17, 7, 22]
+    assert group._engagement["alex"]["streak"] == 1
+    assert group._engagement["river"]["streak"] == 1
+    assert any(record.exc_info and isinstance(record.exc_info[1], OSError)
+               for record in caplog.records)
+    # A later explicit commit may persist the failed effect, without repeating
+    # successful effects or inventing delivery of the rejected second atom.
+    monkeypatch.setattr(reply_module, "record_topic", topics.record_topic)
+    first_reply.commit_atom("alex", 0)
+    assert "pottery progress" in topics.get_recent_topics()
+    assert "unsent kiln plan" not in topics.get_recent_topics()
+    assert config.load_friend_memory("alex").count("I finished my bowl") == 1
+    assert topics.get_recent_joke_formats().count("visible pottery joke") == 1
+    assert topics.get_recent_complaints() == ""
+
+
+def test_memory_failure_preserves_other_effects_and_confirmed_delivery(
+    delivery, monkeypatch, caplog,
+):
+    group = delivery.group
+    alex = delivery.add_friend("alex")
+    failed_reply = prepared(effects=(
+        effect("memory", "I finished my bowl", (0,)),
+        effect("topic", "pottery progress", (0,)),
+        effect("joke_format", "visible pottery joke", (0,)),
+        effect("memory", "An unsent commitment", (1,)),
+    ))
+
+    def fail_memory(*args):
+        raise OSError("memory storage unavailable")
+
+    monkeypatch.setattr(reply_module, "save_friend_memory", fail_memory)
+    sent = asyncio.run(group._send_messages(alex, "alex", failed_reply))
+    assert [message.text for message in sent] == ["A delivered text"]
+    assert [message.text for message in chat_history.load_messages()][1:] == ["A delivered text"]
+    assert group._engagement["alex"]["streak"] == 1
+    assert config.load_friend_memory("alex") == ""
+    assert "pottery progress" in topics.get_recent_topics()
+    assert "visible pottery joke" in topics.get_recent_joke_formats()
+    assert any(record.exc_info and isinstance(record.exc_info[1], OSError)
+               for record in caplog.records)
+    monkeypatch.setattr(reply_module, "save_friend_memory", config.save_friend_memory)
+    failed_reply.commit_atom("alex", 0)
+    assert config.load_friend_memory("alex").count("I finished my bowl") == 1
+    assert "An unsent commitment" not in config.load_friend_memory("alex")
+    assert topics.get_recent_topics().count("pottery progress") == 1
+    assert topics.get_recent_joke_formats().count("visible pottery joke") == 1
+
+
+@pytest.mark.parametrize("violation", ["owner", "absent_atom", "different_friend"])
+def test_commit_atom_preserves_friend_and_atom_invariants(delivery, violation):
+    owned_reply = PreparedReply(
+        (ReplyAtom(0, "A delivered text"),),
+        (effect("memory", "I finished my bowl", (0,)),),
+        None, 17, owner_name="alex" if violation == "owner" else None,
+    )
+    if violation == "different_friend":
+        owned_reply.commit_atom("alex", 0)
+    friend_name = "alex" if violation == "absent_atom" else "river"
+    atom_index = 99 if violation == "absent_atom" else 0
+    with pytest.raises(ValueError):
+        owned_reply.commit_atom(friend_name, atom_index)
+    assert config.load_friend_memory("river") == ""
+    assert ("I finished my bowl" in config.load_friend_memory("alex")) == (
+        violation == "different_friend"
+    )
+
+
+@pytest.mark.parametrize("failure", ["invalid_effect", "writer_invariant"])
+def test_commit_atom_does_not_swallow_programmer_errors(delivery, monkeypatch, failure):
+    def invalid_writer(*args):
+        raise ValueError("writer invariant violated")
+
+    monkeypatch.setattr(reply_module, "record_topic", invalid_writer)
+    kind = "unknown" if failure == "invalid_effect" else "topic"
+    invalid_reply = prepared(effects=(effect(kind, "Never persist", (0,)),))
+    with pytest.raises(KeyError if failure == "invalid_effect" else ValueError):
+        invalid_reply.commit_atom("alex", 0)
+    assert config.load_friend_memory("alex") == ""
+    assert topics.get_recent_topics() == ""
+
+
+def test_bot_mention_during_catchup_routes_idle_friend_without_replacing_catchup(
+    delivery, monkeypatch,
+):
+    async def scenario():
+        group = delivery.group
+        alex = delivery.add_friend("alex")
+        river = delivery.add_friend("river")
+        casey = delivery.add_friend("casey")
+        between_atoms = asyncio.Event()
+        release_second_atom = asyncio.Event()
+        calls = []
+        update_text = "@river_bot, what do you think of the glaze?"
+
+        async def controlled_sleep(delay):
+            delivery.delays.append(delay)
+            if delay == 7:
+                between_atoms.set()
+                await release_second_atom.wait()
+            else:
+                await REAL_SLEEP(0)
+
+        async def think(**kwargs):
+            name = kwargs["friend_name"]
+            calls.append(name)
+            if name == "alex":
+                return prepared(("I finished my bowl", "The glaze is blue"), effects=(
+                    effect("memory", "I finished my bowl", (0,)),
+                    effect("memory", "The glaze is blue", (1,)),
+                ))
+            assert name == "river"
+            assert kwargs["sender"] == "casey"
+            assert kwargs["message"] == update_text
+            assert [message.text for message in chat_history.load_messages()] == [
+                "Original message", "I finished my bowl", update_text,
+            ]
+            assert "I finished my bowl" in config.load_friend_memory("alex")
+            assert "The glaze is blue" not in config.load_friend_memory("alex")
+            return prepared(("I'd like to see that glaze",), reply_to=2)
+
+        monkeypatch.setattr(bot.asyncio, "sleep", controlled_sleep)
+        monkeypatch.setattr(bot, "think_and_respond", think)
+        monkeypatch.setattr(bot, "should_respond", lambda *args, **kwargs: True)
+        mention = bot.PendingMention("alex", "human", "Original message", 1, time.time(), True)
+        catchup = group._start_response_task(
+            ["alex"], group._catch_up(mention, alex, {}), owns_bot_routing=False,
+        )
+        try:
+            await asyncio.wait_for(between_atoms.wait(), 2)
+            await group._handle_message(incoming(
+                text=update_text, sender_id=casey.user_id, message_id=2,
+            ))
+            response = group._active_tasks["river"]
+            await asyncio.wait_for(response, 2)
+            assert calls == ["alex", "river"]
+            assert group._active_tasks["alex"] is catchup
+            assert not catchup.done()
+            assert alex.bot.send_message.await_count == 1
+            assert river.bot.send_message.await_count == 1
+            assert river.bot.send_message.call_args.kwargs["reply_to_message_id"] == 2
+            assert group._engagement["alex"]["streak"] == 1
+            assert group._engagement["river"]["streak"] == 1
+            assert [message.sender for message in chat_history.load_messages()] == [
+                "human", "alex", "casey", "river",
+            ]
+            release_second_atom.set()
+            await asyncio.wait_for(catchup, 2)
+            assert alex.bot.send_message.await_count == 2
+            assert chat_history.load_messages()[-1].text == "The glaze is blue"
+            assert "The glaze is blue" in config.load_friend_memory("alex")
+            assert group._engagement["alex"]["streak"] == 1
+            assert delivery.delays == [3, 7, 17]
+            assert group._pending_mentions == []
+            assert group._active_tasks == {}
+        finally:
+            release_second_atom.set()
+            await group.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_bot_update_during_initiation_does_not_duplicate_proactive_response(
+    delivery, monkeypatch,
+):
+    async def scenario():
+        group = delivery.group
+        alex = delivery.add_friend("alex")
+        river = delivery.add_friend("river")
+        between_atoms = asyncio.Event()
+        release_second_atom = asyncio.Event()
+        calls = []
+        first_text = "@river_bot, I finished the bowl"
+
+        async def controlled_sleep(delay):
+            if delay == 7:
+                between_atoms.set()
+                await release_second_atom.wait()
+            else:
+                await REAL_SLEEP(0)
+
+        async def think(**kwargs):
+            calls.append(kwargs["friend_name"])
+            assert kwargs["friend_name"] == "river"
+            assert kwargs["sender"] == "alex"
+            assert kwargs["message"] == first_text
+            assert chat_history.load_messages()[-1].text == "The glaze is blue"
+            return prepared(("I want to see it",), reply_to=kwargs["message_id"])
+
+        monkeypatch.setattr(bot.asyncio, "sleep", controlled_sleep)
+        monkeypatch.setattr(bot, "think_and_respond", think)
+        monkeypatch.setattr(bot, "maybe_initiate", AsyncMock(return_value=prepared(
+            (first_text, "The glaze is blue"), reply_to=None,
+        )))
+        monkeypatch.setattr(bot, "should_respond", lambda *args, **kwargs: True)
+        initiation = group._start_response_task(
+            ["alex"], group._initiate("alex", alex, {}, 12), owns_bot_routing=True,
+        )
+        try:
+            await asyncio.wait_for(between_atoms.wait(), 2)
+            await group._handle_message(incoming(
+                text=first_text, sender_id=alex.user_id, message_id=1001,
+            ))
+            assert calls == []
+            river.bot.send_message.assert_not_awaited()
+            assert group._active_tasks["alex"] is initiation
+            assert not initiation.done()
+            release_second_atom.set()
+            await asyncio.wait_for(initiation, 2)
+            if group._active_tasks:
+                await asyncio.wait_for(
+                    asyncio.gather(*set(group._active_tasks.values())), 2,
+                )
+            assert calls == ["river"]
+            assert river.bot.send_message.await_count == 1
+            assert alex.bot.send_message.await_count == 2
+            assert group._engagement["alex"]["streak"] == 1
+            assert group._engagement["river"]["streak"] == 1
+        finally:
+            release_second_atom.set()
+            await group.aclose()
+
+    asyncio.run(scenario())

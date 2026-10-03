@@ -144,7 +144,7 @@ def _parse_atoms(raw: str) -> tuple[ReplyAtom, ...]:
     for line in lines:
         stripped = line.lstrip()
         if ("```" in line or stripped.startswith(("{", "[", "}", "]", "~~~"))
-                or re.match(r"(?:\(?\d+[.)\]:]|[a-z][.)]\s|[-*+]\s|#{1,6}\s|(?:message|text|atom)\s*\d*\s*:)", stripped, re.I)):
+                or re.match(r"(?:\(?\d+[.)\]:](?=\s|$)|[a-z][.)]\s|[-*+]\s|#{1,6}\s|(?:message|text|atom)\s*\d*\s*:)", stripped, re.I)):
             raise ValueError("Writer returned JSON, fences, numbering, or other framing")
     # Keep exact original wording and whitespace; blank lines create no identities.
     return tuple(ReplyAtom(index, line) for index, line in enumerate(lines))
@@ -253,7 +253,7 @@ async def _validate_metadata(client, data, atoms, state, sources, allowed_target
     return tuple(effects)
 
 
-async def _context(client, name, config, opportunity, messages):
+async def _context(client, name, config, opportunity, triggering_message=None):
     availability = get_availability(config)
     if not availability["awake"]:
         status = "You're asleep (phone might wake you for important stuff)"
@@ -266,6 +266,12 @@ async def _context(client, name, config, opportunity, messages):
     soul = load_friend_soul(name)
     bot_names = set(get_friend_names())
     overasked = await render_overasked_block(client, bot_names)
+    messages = load_messages(50)
+    # Compaction may remove a normal or catchup opportunity during the helper.
+    # Retain only its actual source, not the unrelated pre-await chat window.
+    if triggering_message is not None and not any(
+            m.message_id == triggering_message.message_id for m in messages):
+        messages.insert(0, triggering_message)
     context = _CONTEXT.format(
         name=name, soul=soul, personality_dials=_describe_dials(config),
         history=load_history() or "(No shared history yet)",
@@ -276,7 +282,7 @@ async def _context(client, name, config, opportunity, messages):
         recent_jokes=get_recent_joke_formats() or "(None yet)",
         recent_complaints=get_recent_complaints() or "(None yet)",
         overasked_block=(f"\n## Threads being beaten to death (DO NOT touch these)\n{overasked}\n" if overasked else ""),
-        chat_context=get_chat_context(limit=50), opportunity=opportunity,
+        chat_context=get_chat_context(messages=messages), opportunity=opportunity,
     )
     sources = {m.message_id: m for m in messages if m.message_id > 0 and not m.is_reaction}
     answered = {m.reply_to for m in messages if m.sender == name and m.reply_to}
@@ -366,10 +372,13 @@ async def think_and_respond(client: AsyncOpenRouter, friend_name: str, sender: s
         opportunity += "\nFetched link previews (auxiliary context, not sender assertions):\n" + link_previews + "\nReference relevant contents naturally, not as a book report."
     if photo_description:
         opportunity += "\nAuxiliary model-produced photo description (not a sender assertion or memory):\n" + photo_description
-    if message_id > 0 and not any(m.message_id == message_id for m in messages):
-        messages.append(ChatMessage(0, sender, message, message_id))
+    triggering_message = None
+    if message_id > 0:
+        triggering_message = next((m for m in messages if m.message_id == message_id), None)
+        if triggering_message is None:
+            triggering_message = ChatMessage(0, sender, message, message_id)
     try:
-        state, sources, targets = await _context(client, friend_name, friend_config, opportunity, messages)
+        state, sources, targets = await _context(client, friend_name, friend_config, opportunity, triggering_message)
     except Exception as exc:
         raise BrainStageError("context", friend_name, str(exc)) from exc
     # The newest message needs no explicit threading; older known targets only.
@@ -399,7 +408,7 @@ async def maybe_initiate(client: AsyncOpenRouter, friend_name: str, friend_confi
         silence_duration=f"{silence_minutes} minutes" if silence_minutes < 60 else f"{silence_minutes / 60:.1f} hours",
         day_of_week=now.strftime("%A"), time_vibe=vibe, freshness_note=freshness)
     try:
-        state, sources, targets = await _context(client, friend_name, friend_config, opportunity, load_messages(50))
+        state, sources, targets = await _context(client, friend_name, friend_config, opportunity)
     except Exception as exc:
         raise BrainStageError("context", friend_name, str(exc)) from exc
     return await _prepare(client, friend_name, state, sources, targets)

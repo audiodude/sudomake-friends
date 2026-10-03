@@ -2,9 +2,12 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 
 from .config import load_friend_memory, save_friend_memory
 from .topics import record_topic, record_joke_format, record_complaint
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -64,5 +67,12 @@ class PreparedReply:
         for index, effect in enumerate(self.effects):
             if index in self._committed or not set(effect.atom_ids) <= self._delivered:
                 continue
-            writers[effect.kind](friend_name, effect.value)
+            try:
+                writers[effect.kind](friend_name, effect.value)
+            except OSError:
+                logger.exception(
+                    "Failed to persist %s effect for %s after atom %s",
+                    effect.kind, friend_name, atom_index,
+                )
+                continue
             self._committed.add(index)

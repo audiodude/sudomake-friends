@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from src import brain, reply, memory_validator
+from src import brain, reply, memory_validator, chat_history
 from src.chat_history import ChatMessage
 from src.llm import LUNA_MODEL
 from src.reply import PreparedReply, ReplyAtom, ReplyEffect
@@ -45,7 +45,7 @@ def setup(monkeypatch):
     monkeypatch.setattr(brain, "load_friend_soul", lambda name: "A potter with quiet observational humor")
     monkeypatch.setattr(brain, "load_friend_memory", lambda name: "I enjoy making bowls")
     monkeypatch.setattr(brain, "load_history", lambda: "Old friends from school")
-    monkeypatch.setattr(brain, "get_chat_context", lambda **kwargs: "\n".join(m.display() for m in messages))
+    monkeypatch.setattr(brain, "get_chat_context", lambda **kwargs: "\n".join(m.display() for m in kwargs["messages"]))
     monkeypatch.setattr(brain, "get_friend_names", lambda: ["casey", "river"])
     monkeypatch.setattr(brain, "get_availability", lambda config: {"awake": True, "at_work": False, "day_off": True, "local_time": "evening"})
     monkeypatch.setattr(brain, "load_friend_news", lambda name: "Today's verified headline")
@@ -64,6 +64,19 @@ def setup(monkeypatch):
         complete=AsyncMock(return_value=completion("good evening")),
         complete_structured=AsyncMock(return_value=completion(json.dumps(metadata()))))
     return client, messages, writes
+
+
+@pytest.fixture
+def real_chat(monkeypatch, tmp_path, setup):
+    client, messages, writes = setup
+    monkeypatch.setattr(chat_history, "CHAT_PATH", tmp_path / "CHAT.jsonl")
+    monkeypatch.setattr(chat_history, "CHAT_SUMMARY_PATH", tmp_path / "CHAT_SUMMARY.md")
+    chat_history.CHAT_SUMMARY_PATH.write_text("The group talked about the pottery show.")
+    for message in messages:
+        chat_history.append_message(message)
+    monkeypatch.setattr(brain, "load_messages", chat_history.load_messages)
+    monkeypatch.setattr(brain, "get_chat_context", chat_history.get_chat_context)
+    return client, writes
 
 
 async def respond(client, **kwargs):
@@ -122,8 +135,22 @@ async def test_success_preserves_original_lines_and_does_not_write(setup):
 
 
 @run_async
+@pytest.mark.parametrize("draft", ["10:30 works for me", "3.5 miles today",
+                                  "  10:30 works for me  \n3.5 miles today"])
+async def test_times_and_decimals_prepare_as_exact_plain_text(setup, draft):
+    client, _, writes = setup
+    client.complete.return_value = completion(draft)
+    prepared = await respond(client)
+    assert prepared.atoms == tuple(ReplyAtom(i, text) for i, text in enumerate(draft.split("\n")))
+    assert client.complete_structured.await_count == 1
+    writes.assert_not_called()
+
+
+@run_async
 @pytest.mark.parametrize("draft", ["", "a\nb\nc\nd\ne", "```\nhi\n```", '{"messages":["hi"]}',
-                                    "1. hello", "(1) hello", "a) hello", "- hello", "Message 1: hello", "hi\r\nthere"])
+                                    "1. hello", "(1) hello", "2) hello", "3] hello", "4: hello",
+                                    "1.", "2)", "3]", "4:", "(5)", "6:\thello",
+                                    "a) hello", "- hello", "Message 1: hello", "hi\r\nthere"])
 async def test_invalid_framing_is_not_reinterpreted_or_truncated(setup, draft):
     client, _, writes = setup
     client.complete.return_value = completion(draft)
@@ -351,6 +378,119 @@ async def test_duplicate_response_safeguard_skips_every_model_stage(setup):
     client.complete_structured.assert_not_awaited()
     writes.assert_not_called()
 
+
+
+@run_async
+async def test_self_reply_safeguard_skips_every_model_stage(setup):
+    client, _, writes = setup
+    assert await brain.think_and_respond(client, "casey", "casey", "my own text", 10, {}) is None
+    brain.render_overasked_block.assert_not_awaited()
+    client.decide.assert_not_awaited()
+    client.complete.assert_not_awaited()
+    client.complete_structured.assert_not_awaited()
+    writes.assert_not_called()
+
+
+@run_async
+@pytest.mark.parametrize("initiate", [False, True])
+async def test_arrival_during_helper_is_shared_context_source_and_reply_target(monkeypatch, real_chat, initiate):
+    client, writes = real_chat
+    incoming = ChatMessage(2, "river", "casey, your bowl won the prize", 11, reply_to=10)
+
+    async def arrival(*args):
+        await asyncio.sleep(0)
+        chat_history.append_message(incoming)
+        return ""
+
+    monkeypatch.setattr(brain, "render_overasked_block", arrival)
+    client.complete.return_value = completion("I'm putting that award on the studio shelf")
+    client.complete_structured.return_value = completion(json.dumps(metadata([
+        effect("memory", "I won the prize for my bowl", texts=("that award",), source="incoming",
+               source_id=11, subject="casey", source_quote=incoming.text)], target=11)))
+    prepared = (await brain.maybe_initiate(client, "casey", {}, 420)
+                if initiate else await respond(client))
+    assert prepared.reply_to_message_id == 11
+    assert prepared.effects == (ReplyEffect("memory", "I won the prize for my bowl", (0,), "incoming", 11),)
+    state = client.decide.await_args.kwargs["state"]
+    assert incoming.text in state["context"]
+    assert 'replying to Travis: "how was your day?"' in state["context"]
+    assert "The group talked about the pottery show." in state["context"]
+    assert 11 in state["allowed_reply_targets"]
+    extraction = json.loads(client.complete_structured.await_args.kwargs["messages"][1]["content"])
+    assert {m["message_id"] for m in extraction["source_messages"]} == {10, 11}
+    evidence = json.loads(brain.validate_memory.await_args.kwargs["attribution_context"])
+    assert evidence["source_message"] == vars(incoming)
+    assert evidence["conversation"] == state["context"]
+    assert client.complete_structured.await_count == 1
+    writes.assert_not_called()
+
+
+@run_async
+@pytest.mark.parametrize("initiate", [False, True])
+async def test_new_human_during_helper_can_own_supported_incoming_memory(monkeypatch, real_chat, initiate):
+    client, writes = real_chat
+    incoming = ChatMessage(2, "Lina", "I finished my kiln today", 11)
+
+    async def arrival(*args):
+        await asyncio.sleep(0)
+        chat_history.append_message(incoming)
+        return ""
+
+    monkeypatch.setattr(brain, "render_overasked_block", arrival)
+    client.complete.return_value = completion("nice work on that kiln")
+    client.complete_structured.return_value = completion(json.dumps(metadata([
+        effect("memory", "Lina finished their kiln", texts=("that kiln",), source="incoming",
+               source_id=11, subject="Lina", source_quote=incoming.text)])))
+    prepared = (await brain.maybe_initiate(client, "casey", {}, 420)
+                if initiate else await respond(client))
+    assert prepared.effects == (ReplyEffect("memory", "Lina finished their kiln", (0,), "incoming", 11),)
+    state = client.decide.await_args.kwargs["state"]
+    assert "Lina" in state["participant_names"]
+    assert "[msg:11][Lina]: I finished my kiln today" in state["context"]
+    assert "Lina" in brain.validate_memory.await_args.kwargs["other_names"]
+    assert client.complete_structured.await_count == 1
+    writes.assert_not_called()
+
+
+@run_async
+@pytest.mark.parametrize("missing_before_call", [False, True], ids=["normal-compacted-during-helper", "catchup-already-compacted"])
+async def test_compacted_trigger_remains_source_without_restoring_stale_window(monkeypatch, real_chat, missing_before_call):
+    client, writes = real_chat
+    incoming = ChatMessage(2, "Travis", "casey remember your synth?", 10, reply_to=7)
+    stale = ChatMessage(1, "FormerParticipant", "old unrelated chatter", 7)
+    chat_history.CHAT_PATH.write_text("")
+    chat_history.append_message(stale)
+    if not missing_before_call:
+        chat_history.append_message(incoming)
+
+    async def compaction(*args):
+        await asyncio.sleep(0)
+        chat_history.CHAT_PATH.write_text("")
+        chat_history.append_message(ChatMessage(3, "river", "the studio is warm today", 12))
+        return ""
+
+    monkeypatch.setattr(brain, "render_overasked_block", compaction)
+    client.complete.return_value = completion("I should turn my synth on")
+    client.complete_structured.return_value = completion(json.dumps(metadata([
+        effect("memory", "I own a synth", texts=("my synth",), source="incoming",
+               source_id=10, subject="casey", source_quote=incoming.text)])))
+    prepared = await brain.think_and_respond(client, "casey", incoming.sender, incoming.text, 10, {})
+    assert prepared.effects == (ReplyEffect("memory", "I own a synth", (0,), "incoming", 10),)
+    state = client.decide.await_args.kwargs["state"]
+    assert "[msg:10][Travis]" in state["context"]
+    assert "[msg:12][river]: the studio is warm today" in state["context"]
+    assert "old unrelated chatter" not in state["context"]
+    assert "FormerParticipant" not in state["participant_names"]
+    assert state["allowed_reply_targets"] == [12]
+    extraction = json.loads(client.complete_structured.await_args.kwargs["messages"][1]["content"])
+    sources = {m["message_id"]: m for m in extraction["source_messages"]}
+    assert set(sources) == {10, 12}
+    assert sources[10]["text"] == incoming.text
+    if not missing_before_call:
+        assert sources[10] == vars(incoming)
+        assert "(replying to msg:7)" in state["context"]
+    assert client.complete_structured.await_count == 1
+    writes.assert_not_called()
 
 @run_async
 async def test_duplicate_json_fields_are_malformed_not_last_value_wins(setup):
